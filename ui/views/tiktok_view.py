@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                              QLineEdit, QPushButton, QComboBox, QTableWidget)
-from services.tiktok_connector import TikTokConnector
+from services.extractors.tiktok_connector import TikTokConnector
 
 class TikTokView(QWidget):
     def __init__(self, parent=None):

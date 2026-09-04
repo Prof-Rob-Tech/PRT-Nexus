@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (
     QLabel, QGroupBox, QLineEdit, QPushButton, 
     QMessageBox, QTableWidget, QTableWidgetItem, QProgressBar
 )
+
 from ui.views.universo_view import UniversoView
 from services.extractors.chip7_connector import Chip7Worker
 

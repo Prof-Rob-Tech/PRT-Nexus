@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from services.kiwify_connector import KiwifyConnector
+from services.extractors.kiwify_connector import KiwifyConnector
 from theme.colors import ThemeColors
 
 KIWIFY_SVG = '<svg viewBox="0 0 24 24"><path fill="#00B563" d="M18.8 17.3C17.1 19.5 14.5 20.8 11.6 20.8C6.3 20.8 2 16.5 2 11.2C2 7.7 3.9 4.6 6.8 2.9C7.3 2.6 8 3 8 3.6C8 3.8 7.9 4 7.8 4.2C5.3 5.7 3.8 8.3 3.8 11.2C3.8 15.5 7.3 19 11.6 19C13.9 19 16 18 17.4 16.3C17.7 15.9 18.3 15.9 18.7 16.2C19.1 16.5 19.1 17 18.8 17.3Z"/><ellipse cx="7.2" cy="10.8" rx="0.9" ry="1.8" transform="rotate(-50 7.2 10.8)" fill="#00B563"/><ellipse cx="8.8" cy="13.5" rx="0.9" ry="1.8" transform="rotate(-25 8.8 13.5)" fill="#00B563"/><ellipse cx="11.2" cy="15.2" rx="0.9" ry="1.8" transform="rotate(0 11.2 15.2)" fill="#00B563"/><ellipse cx="14.2" cy="15.8" rx="0.9" ry="1.8" transform="rotate(30 14.2 15.8)" fill="#00B563"/></svg>'
