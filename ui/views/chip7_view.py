@@ -1,4 +1,6 @@
 import os
+import re
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QLabel, QGroupBox, QLineEdit, QPushButton, 
     QMessageBox, QTableWidget, QTableWidgetItem, QProgressBar
@@ -10,11 +12,9 @@ class Chip7View(UniversoView):
     def __init__(self, parent=None, downloads_view=None):
         super().__init__(parent=parent, downloads_view=downloads_view)
         self.worker = None
+        self._lbl_status = None
         
-        # Alterar textos da interface para "Chip 7"
         self._customizar_interface()
-        
-        # Reconectar botões para o backend do Chip 7
         self._conectar_acoes()
 
     def _customizar_interface(self):
@@ -78,8 +78,10 @@ class Chip7View(UniversoView):
             if "baixar" in btn.text().lower() or "mapear" in btn.text().lower():
                 btn.setEnabled(False)
 
+        self._lbl_status = None
         self.worker = Chip7Worker(url, email, senha, destino, modo_avulso=modo_avulso)
         self.worker.progresso.connect(self._on_progresso)
+        self.worker.item_progresso.connect(self._on_item_progresso)
         self.worker.item_concluido.connect(self._on_item_concluido)
         self.worker.concluido.connect(self._on_concluido)
         self.worker.start()
@@ -89,21 +91,120 @@ class Chip7View(UniversoView):
         if pbar:
             pbar.setValue(pct)
             
-        for lbl in self.findChildren(QLabel):
-            if any(term in lbl.text().lower() for term in ["aguardando", "iniciando", "processando", "acessando", "downloads"]):
-                lbl.setText(msg)
+        if self._lbl_status:
+            self._lbl_status.setText(msg)
+        else:
+            for lbl in self.findChildren(QLabel):
+                txt = lbl.text().lower()
+                if any(term in txt for term in ["mapeando", "aguardando", "iniciando", "processando", "acessando", "downloads", "baixando"]):
+                    self._lbl_status = lbl
+                    self._lbl_status.setText(msg)
+                    break
+
+    def _criar_barra_status(self):
+        pbar = QProgressBar()
+        pbar.setRange(0, 100)
+        pbar.setValue(0)
+        pbar.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        pbar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #3a3a3a;
+                border-radius: 4px;
+                text-align: center;
+                background-color: #1e1e1e;
+                color: #ffffff;
+                font-size: 11px;
+                font-weight: bold;
+            }
+            QProgressBar::chunk {
+                background-color: #2ecc71;
+                border-radius: 3px;
+            }
+        """)
+        return pbar
+
+    def _on_item_progresso(self, num_str, pct):
+        tabela = self.findChild(QTableWidget)
+        if not tabela:
+            return
+
+        for row in range(tabela.rowCount()):
+            item_num = tabela.item(row, 0)
+            if item_num and item_num.text() == str(num_str):
+                pbar = tabela.cellWidget(row, 3)
+                if isinstance(pbar, QProgressBar):
+                    pbar.setValue(int(pct))
                 break
 
     def _on_item_concluido(self, item):
         tabela = self.findChild(QTableWidget)
         if not tabela:
             return
-        row = tabela.rowCount()
-        tabela.insertRow(row)
-        tabela.setItem(row, 0, QTableWidgetItem(str(item.get("num", ""))))
-        tabela.setItem(row, 1, QTableWidgetItem(str(item.get("titulo", ""))))
-        tabela.setItem(row, 2, QTableWidgetItem(str(item.get("caminho", ""))))
-        tabela.setItem(row, 3, QTableWidgetItem(str(item.get("status", ""))))
+
+        num = str(item.get("num", ""))
+        titulo_bruto = str(item.get("titulo", ""))
+        caminho = str(item.get("caminho", ""))
+        status = str(item.get("status", ""))
+
+        # Remove prefixos numéricos e underlines para deixar o título limpo na exibição
+        titulo_exibicao = re.sub(r'^\d+[\_]*', '', titulo_bruto).replace('_', ' ').strip()
+
+        linha_existente = -1
+        for row in range(tabela.rowCount()):
+            item_num = tabela.item(row, 0)
+            if item_num and item_num.text() == num:
+                linha_existente = row
+                break
+
+        if linha_existente >= 0:
+            pbar = tabela.cellWidget(linha_existente, 3)
+            if isinstance(pbar, QProgressBar):
+                if status == "Concluído":
+                    pbar.setValue(100)
+                    pbar.setFormat("Concluído (100%)")
+                elif status == "Erro":
+                    pbar.setValue(100)
+                    pbar.setFormat("Erro")
+                    pbar.setStyleSheet("""
+                        QProgressBar {
+                            border: 1px solid #3a3a3a;
+                            border-radius: 4px;
+                            text-align: center;
+                            background-color: #1e1e1e;
+                            color: #ffffff;
+                            font-size: 11px;
+                            font-weight: bold;
+                        }
+                        QProgressBar::chunk {
+                            background-color: #e74c3c;
+                            border-radius: 3px;
+                        }
+                    """)
+        else:
+            row = tabela.rowCount()
+            tabela.insertRow(row)
+
+            # Coluna 0 (#): Número centralizado
+            item_num = QTableWidgetItem(num)
+            item_num.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            tabela.setItem(row, 0, item_num)
+
+            # Coluna 1: Título sem prefixo e sem underline
+            tabela.setItem(row, 1, QTableWidgetItem(titulo_exibicao))
+
+            # Coluna 2: Caminho do arquivo
+            tabela.setItem(row, 2, QTableWidgetItem(caminho))
+
+            # Coluna 3: Barra de progresso individual
+            pbar = self._criar_barra_status()
+            if status == "Concluído":
+                pbar.setValue(100)
+                pbar.setFormat("Concluído (100%)")
+            else:
+                pbar.setValue(0)
+                pbar.setFormat("%p%")
+
+            tabela.setCellWidget(row, 3, pbar)
 
     def _on_concluido(self, sucesso, mensagem):
         for btn in self.findChildren(QPushButton):

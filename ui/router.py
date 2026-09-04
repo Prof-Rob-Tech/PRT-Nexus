@@ -8,7 +8,6 @@ Description: Roteamento central das visões da aplicação.
 
 from PySide6.QtWidgets import QStackedWidget, QWidget
 from ui.views.tiktok_view import TikTokView
-from ui.views.chip7_view import Chip7View
 
 
 class Router(QStackedWidget):
