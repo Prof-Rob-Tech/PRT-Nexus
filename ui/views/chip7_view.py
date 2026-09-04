@@ -30,6 +30,34 @@ class Chip7View(UniversoView):
             if "Universo Técnico" in le.placeholderText():
                 le.setPlaceholderText(le.placeholderText().replace("Universo Técnico", "Chip 7"))
 
+        tabela = self.findChild(QTableWidget)
+        if tabela:
+            self._configurar_estilo_tabela(tabela)
+
+    def _configurar_estilo_tabela(self, tabela):
+        tabela.setShowGrid(True)
+        tabela.setStyleSheet("""
+            QTableWidget {
+                gridline-color: #3a3a3a;
+                background-color: #1a1a1a;
+            }
+            QTableWidget::item {
+                border: none;
+                padding: 4px;
+            }
+            QHeaderView::section {
+                background-color: #2b2b2b;
+                color: #ffffff;
+                border-right: 1px solid #3a3a3a;
+                border-bottom: 1px solid #3a3a3a;
+                border-top: none;
+                border-left: none;
+                padding: 4px;
+                font-weight: bold;
+            }
+        """)
+        tabela.setColumnWidth(0, 45)
+
     def _conectar_acoes(self):
         for btn in self.findChildren(QPushButton):
             txt = btn.text().lower()
@@ -73,6 +101,7 @@ class Chip7View(UniversoView):
         tabela = self.findChild(QTableWidget)
         if tabela:
             tabela.setRowCount(0)
+            self._configurar_estilo_tabela(tabela)
 
         for btn in self.findChildren(QPushButton):
             if "baixar" in btn.text().lower() or "mapear" in btn.text().lower():
@@ -146,8 +175,9 @@ class Chip7View(UniversoView):
         caminho = str(item.get("caminho", ""))
         status = str(item.get("status", ""))
 
-        # Remove prefixos numéricos e underlines para deixar o título limpo na exibição
-        titulo_exibicao = re.sub(r'^\d+[\_]*', '', titulo_bruto).replace('_', ' ').strip()
+        # Limpeza total do título (sem números, traços ou underlines no início)
+        titulo_exibicao = re.sub(r'^\d+[\s\-_]*', '', titulo_bruto)
+        titulo_exibicao = re.sub(r'^[\s\-_]+', '', titulo_exibicao).replace('_', ' ').strip()
 
         linha_existente = -1
         for row in range(tabela.rowCount()):
@@ -184,18 +214,13 @@ class Chip7View(UniversoView):
             row = tabela.rowCount()
             tabela.insertRow(row)
 
-            # Coluna 0 (#): Número centralizado
             item_num = QTableWidgetItem(num)
             item_num.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             tabela.setItem(row, 0, item_num)
 
-            # Coluna 1: Título sem prefixo e sem underline
             tabela.setItem(row, 1, QTableWidgetItem(titulo_exibicao))
-
-            # Coluna 2: Caminho do arquivo
             tabela.setItem(row, 2, QTableWidgetItem(caminho))
 
-            # Coluna 3: Barra de progresso individual
             pbar = self._criar_barra_status()
             if status == "Concluído":
                 pbar.setValue(100)
@@ -205,6 +230,7 @@ class Chip7View(UniversoView):
                 pbar.setFormat("%p%")
 
             tabela.setCellWidget(row, 3, pbar)
+            tabela.setColumnWidth(0, 45)
 
     def _on_concluido(self, sucesso, mensagem):
         for btn in self.findChildren(QPushButton):

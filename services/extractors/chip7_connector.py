@@ -5,7 +5,7 @@ from PySide6.QtCore import QThread, Signal
 
 class Chip7Worker(QThread):
     progresso = Signal(str, int)
-    item_progresso = Signal(str, float)  # Novo sinal: (num_aula, porcentagem)
+    item_progresso = Signal(str, float)
     item_concluido = Signal(dict)
     concluido = Signal(bool, str)
 
@@ -112,7 +112,8 @@ class Chip7Worker(QThread):
                 # 5. Processamento dos downloads
                 for idx, aula in enumerate(aulas_mapeadas, 1):
                     nome_aula = self._limpar_nome(aula["titulo"])
-                    nome_arquivo = f"{idx:02d}_{nome_aula}" if not self.modo_avulso else nome_aula
+                    # Troca do underline por traço: 01 - NOME_DO_VIDEO
+                    nome_arquivo = f"{idx:02d} - {nome_aula}" if not self.modo_avulso else nome_aula
                     caminho_previsto = os.path.join(pasta_modulo, f"{nome_arquivo}.mp4")
 
                     if not self.modo_avulso and aula["elemento"]:
@@ -128,7 +129,6 @@ class Chip7Worker(QThread):
                         videos_baixados += 1
                         num_str = str(videos_baixados)
 
-                        # Notifica a interface para criar a linha com a barra de progresso em 0%
                         self.item_concluido.emit({
                             "num": num_str,
                             "titulo": nome_arquivo,
@@ -136,7 +136,6 @@ class Chip7Worker(QThread):
                             "status": "Baixando..."
                         })
 
-                        # Executa download transmitindo a porcentagem
                         caminho_final = self._baixar_com_ytdlp(
                             vimeo_url, 
                             pasta_modulo, 
@@ -149,7 +148,6 @@ class Chip7Worker(QThread):
 
                         status_final = "Concluído" if (caminho_final and os.path.exists(caminho_final)) else "Erro"
 
-                        # Finaliza a barra desse vídeo
                         self.item_concluido.emit({
                             "num": num_str,
                             "titulo": nome_arquivo,
@@ -239,12 +237,10 @@ class Chip7Worker(QThread):
                     if match:
                         pct_video = float(match.group(1))
                         
-                        # Atualiza barra geral no rodapé
                         progresso_total = int(base_progresso + (pct_video / 100.0) * fatia_progresso)
                         msg_status = f"Baixando ({idx}/{total_aulas}): {nome_aula[:20]}... ({pct_video:.1f}%)"
                         self.progresso.emit(msg_status, min(max(progresso_total, 1), 99))
 
-                        # Transmite porcentagem individual para a linha correspondente da tabela
                         self.item_progresso.emit(num_str, pct_video)
 
             process.wait()
