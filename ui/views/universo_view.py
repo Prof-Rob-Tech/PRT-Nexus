@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
 )
 from services.extractors.universo_mapper import UniversoWorker
 
+
 class UniversoView(QWidget):
     def __init__(self, parent=None, downloads_view=None):
         super().__init__(parent)
@@ -15,7 +16,73 @@ class UniversoView(QWidget):
         self.worker = None
 
         self._montar_interface()
+        self._aplicar_estilos()
         self._conectar_acoes()
+
+    def _aplicar_estilos(self):
+        """Aplica o CSS rebaixando o título para revelar a linha superior da borda."""
+        self.setStyleSheet("""
+            /* QGroupBox com a linha superior visível */
+            QGroupBox {
+                background-color: #252526;
+                border: 1px solid #3c3c3c;
+                border-radius: 6px;
+                margin-top: 18px;
+                padding-top: 16px;
+                padding-bottom: 10px;
+                font-weight: bold;
+                color: #ffffff;
+            }
+            QGroupBox::title {
+                subcontrol-origin: border;
+                subcontrol-position: top left;
+                left: 12px;
+                top: 6px; /* Empurra o título para baixo revelando a linha fininha no topo */
+                padding: 0 4px;
+                background-color: #252526;
+                color: #ffffff;
+            }
+
+            /* Campos de Entrada de Texto e ComboBox */
+            QLineEdit, QComboBox {
+                background-color: #1e1e1e;
+                border: 1px solid #3a3a3a;
+                border-radius: 4px;
+                color: #ffffff;
+                padding: 5px 8px;
+                font-size: 12px;
+            }
+            QLineEdit:focus, QComboBox:focus {
+                border: 1px solid #0066cc;
+            }
+            QLineEdit:read-only {
+                background-color: #181818;
+                color: #888888;
+            }
+
+            /* Rótulos dos formulários com moldura fina */
+            QLabel.lbl-box {
+                background-color: #1e1e1e;
+                border: 1px solid #3a3a3a;
+                border-radius: 4px;
+                color: #cccccc;
+                padding: 5px 8px;
+                font-size: 12px;
+            }
+
+            /* Botão Secundário */
+            QPushButton#btn_alterar {
+                background-color: #333333;
+                color: #ffffff;
+                border: 1px solid #444444;
+                border-radius: 4px;
+                padding: 4px 12px;
+                font-weight: bold;
+            }
+            QPushButton#btn_alterar:hover {
+                background-color: #444444;
+            }
+        """)
 
     def _montar_interface(self):
         layout_principal = QVBoxLayout(self)
@@ -39,8 +106,9 @@ class UniversoView(QWidget):
         ly_esq.setSpacing(10)
 
         # 1. Captura de Mídia
-        gb_captura = QGroupBox("Captura de Mídia - Universo Técnico")
+        gb_captura = QGroupBox("🔗 Captura de Mídia - Universo Técnico")
         ly_captura = QVBoxLayout(gb_captura)
+        ly_captura.setContentsMargins(10, 12, 10, 10)
         ly_captura.setSpacing(8)
 
         self.txt_url = QLineEdit()
@@ -50,7 +118,7 @@ class UniversoView(QWidget):
         # Seleção de Qualidade
         ly_qual = QHBoxLayout()
         lbl_qual = QLabel("Qualidade:")
-        lbl_qual.setStyleSheet("color: #cccccc;")
+        lbl_qual.setProperty("class", "lbl-box")
         self.cmb_qualidade = QComboBox()
         self.cmb_qualidade.addItems([
             "Vídeo - Max Qualidade (MP4)",
@@ -65,10 +133,10 @@ class UniversoView(QWidget):
         # Botões de Ação
         ly_btns = QHBoxLayout()
         self.btn_avulso = QPushButton("⚡ Baixar Mídia Avulsa")
-        self.btn_avulso.setStyleSheet("background-color: #0066cc; color: white; font-weight: bold; padding: 7px; border-radius: 4px;")
+        self.btn_avulso.setStyleSheet("background-color: #0066cc; color: white; font-weight: bold; padding: 7px; border-radius: 4px; border: none;")
         
         self.btn_curso = QPushButton("🗺️ Mapear e Baixar Curso / Playlist")
-        self.btn_curso.setStyleSheet("background-color: #2ecc71; color: white; font-weight: bold; padding: 7px; border-radius: 4px;")
+        self.btn_curso.setStyleSheet("background-color: #2ecc71; color: white; font-weight: bold; padding: 7px; border-radius: 4px; border: none;")
         
         ly_btns.addWidget(self.btn_avulso)
         ly_btns.addWidget(self.btn_curso)
@@ -76,9 +144,10 @@ class UniversoView(QWidget):
 
         ly_esq.addWidget(gb_captura)
 
-        # 2. Autenticação (Com FormLayout e Rótulos)
-        gb_auth = QGroupBox("Autenticação (Áreas Pagas / Privadas)")
+        # 2. Autenticação
+        gb_auth = QGroupBox("🔐 Autenticação (Áreas Pagas / Privadas)")
         form_auth = QFormLayout(gb_auth)
+        form_auth.setContentsMargins(10, 12, 10, 10)
         form_auth.setSpacing(8)
 
         self.txt_email = QLineEdit()
@@ -88,9 +157,9 @@ class UniversoView(QWidget):
         self.txt_senha.setPlaceholderText("Senha")
 
         lbl_email = QLabel("E-mail / Usuário")
-        lbl_email.setStyleSheet("color: #cccccc;")
+        lbl_email.setProperty("class", "lbl-box")
         lbl_senha = QLabel("Senha")
-        lbl_senha.setStyleSheet("color: #cccccc;")
+        lbl_senha.setProperty("class", "lbl-box")
 
         form_auth.addRow(lbl_email, self.txt_email)
         form_auth.addRow(lbl_senha, self.txt_senha)
@@ -98,11 +167,12 @@ class UniversoView(QWidget):
         ly_esq.addWidget(gb_auth)
 
         # 3. Pasta de Destino
-        gb_destino = QGroupBox("Pasta de Destino")
+        gb_destino = QGroupBox("📁 Pasta de Destino")
         ly_dest = QHBoxLayout(gb_destino)
+        ly_dest.setContentsMargins(10, 12, 10, 10)
         self.txt_destino = QLineEdit(os.path.join(os.path.expanduser("~"), "Downloads", "PRT_Nexus"))
         self.btn_alterar_dest = QPushButton("Alterar")
-        self.btn_alterar_dest.setStyleSheet("padding: 4px 12px;")
+        self.btn_alterar_dest.setObjectName("btn_alterar")
         ly_dest.addWidget(self.txt_destino)
         ly_dest.addWidget(self.btn_alterar_dest)
 
@@ -111,21 +181,22 @@ class UniversoView(QWidget):
         layout_top.addLayout(ly_esq, stretch=2)
 
         # ================= COLUNA DIREITA =================
-        gb_org = QGroupBox("Organização de Pastas (Curso / Playlist)")
+        gb_org = QGroupBox("📁 Organização de Pastas (Curso / Playlist)")
         form_org = QFormLayout(gb_org)
+        form_org.setContentsMargins(10, 12, 10, 10)
         form_org.setSpacing(12)
 
         lbl_nome_cnt = QLabel("Nome do Conteúdo")
-        lbl_nome_cnt.setStyleSheet("color: #cccccc;")
-        self.txt_nome_conteudo = QLineEdit("Nome do Conteúdo / Curso / Playlist")
+        lbl_nome_cnt.setProperty("class", "lbl-box")
+        self.txt_nome_conteudo = QLineEdit("Universo Técnico - Curso Extraído")
         
         lbl_est = QLabel("Estrutura")
-        lbl_est.setStyleSheet("color: #cccccc;")
+        lbl_est.setProperty("class", "lbl-box")
         self.txt_estrutura = QLineEdit("Organizado Automaticamente por Módulo")
         self.txt_estrutura.setReadOnly(True)
 
         lbl_mid = QLabel("Mídias")
-        lbl_mid.setStyleSheet("color: #cccccc;")
+        lbl_mid.setProperty("class", "lbl-box")
         self.txt_midias = QLineEdit("Extração Sequencial de Vídeos")
         self.txt_midias.setReadOnly(True)
 
@@ -140,7 +211,14 @@ class UniversoView(QWidget):
         # ================= BARRA DE PROGRESSO GERAL =================
         ly_prog_geral = QHBoxLayout()
         self.lbl_status_global = QLabel("Aguardando link de download...")
-        self.lbl_status_global.setStyleSheet("color: #aaaaaa; font-size: 11px;")
+        self.lbl_status_global.setStyleSheet("""
+            background-color: #1e1e1e;
+            border: 1px solid #3a3a3a;
+            border-radius: 4px;
+            color: #aaaaaa;
+            font-size: 11px;
+            padding: 5px 8px;
+        """)
         
         self.pbar_global = QProgressBar()
         self.pbar_global.setRange(0, 100)
@@ -166,8 +244,9 @@ class UniversoView(QWidget):
         layout_principal.addLayout(ly_prog_geral)
 
         # ================= TABELA DE MÍDIAS =================
-        gb_tabela = QGroupBox("Mídias Concluídas do Universo Técnico")
+        gb_tabela = QGroupBox("📦 Mídias Concluídas do Universo Técnico")
         ly_tab = QVBoxLayout(gb_tabela)
+        ly_tab.setContentsMargins(10, 12, 10, 10)
 
         self.tabela = QTableWidget(0, 4)
         self.tabela.setHorizontalHeaderLabels(["#", "Título / Nome do Arquivo", "Caminho Salvo", "Status"])
@@ -187,10 +266,13 @@ class UniversoView(QWidget):
             QTableWidget {
                 gridline-color: #3a3a3a;
                 background-color: #1a1a1a;
+                border: 1px solid #3a3a3a;
+                border-radius: 4px;
             }
             QTableWidget::item {
                 border: none;
                 padding: 4px;
+                color: #ffffff;
             }
             QHeaderView::section {
                 background-color: #2b2b2b;

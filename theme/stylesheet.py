@@ -22,7 +22,25 @@ def get_stylesheet() -> str:
         color: {ThemeColors.TEXT};
     }}
 
-    /* Barram de Rolagem (ScrollBar) */
+    /* QGroupBox - Estilo Card Moderno */
+    QGroupBox {{
+        background-color: #1a1a1e;
+        border: 1px solid #3f3f46;
+        border-radius: 8px;
+        margin-top: 22px;
+        padding: 12px;
+        font-weight: bold;
+    }}
+    QGroupBox::title {{
+        subcontrol-origin: margin;
+        subcontrol-position: top left;
+        left: 4px;
+        top: 0px;
+        color: #ffffff;
+        background-color: transparent;
+    }}
+
+    /* Barra de Rolagem (ScrollBar) */
     QScrollBar:vertical {{
         border: none;
         background: {ThemeColors.BACKGROUND};
