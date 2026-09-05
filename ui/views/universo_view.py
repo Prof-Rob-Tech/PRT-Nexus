@@ -37,7 +37,7 @@ class UniversoView(QWidget):
                 subcontrol-origin: border;
                 subcontrol-position: top left;
                 left: 12px;
-                top: 6px; /* Empurra o título para baixo revelando a linha fininha no topo */
+                top: 6px;
                 padding: 0 4px;
                 background-color: #252526;
                 color: #ffffff;
@@ -178,7 +178,8 @@ class UniversoView(QWidget):
 
         ly_esq.addWidget(gb_destino)
 
-        layout_top.addLayout(ly_esq, stretch=2)
+        # Adiciona coluna esquerda com proporção 1
+        layout_top.addLayout(ly_esq, stretch=1)
 
         # ================= COLUNA DIREITA =================
         gb_org = QGroupBox("📁 Organização de Pastas (Curso / Playlist)")
@@ -204,6 +205,7 @@ class UniversoView(QWidget):
         form_org.addRow(lbl_est, self.txt_estrutura)
         form_org.addRow(lbl_mid, self.txt_midias)
 
+        # Adiciona coluna direita com proporção 1 (iguala a largura das duas colunas)
         layout_top.addWidget(gb_org, stretch=1)
 
         layout_principal.addLayout(layout_top)
