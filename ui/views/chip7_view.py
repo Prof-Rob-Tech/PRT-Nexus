@@ -20,12 +20,12 @@ class Chip7View(QWidget):
         self._conectar_acoes()
 
     def _aplicar_estilos(self):
-        """Aplica o CSS mantendo o padrão visual com a linha superior alinhada."""
+        """Aplica o CSS com cantos arredondados, foco suave e sem destaques azuis."""
         self.setStyleSheet("""
             QGroupBox {
                 background-color: #252526;
                 border: 1px solid #3c3c3c;
-                border-radius: 6px;
+                border-radius: 12px;
                 margin-top: 18px;
                 padding-top: 16px;
                 padding-bottom: 10px;
@@ -35,9 +35,9 @@ class Chip7View(QWidget):
             QGroupBox::title {
                 subcontrol-origin: border;
                 subcontrol-position: top left;
-                left: 12px;
+                left: 14px;
                 top: 6px;
-                padding: 0 4px;
+                padding: 0 6px;
                 background-color: #252526;
                 color: #ffffff;
             }
@@ -45,13 +45,17 @@ class Chip7View(QWidget):
             QLineEdit, QComboBox {
                 background-color: #1e1e1e;
                 border: 1px solid #3a3a3a;
-                border-radius: 4px;
+                border-radius: 8px;
                 color: #ffffff;
-                padding: 5px 8px;
+                padding: 6px 10px;
                 font-size: 12px;
+                /* Remove a seleção azul padrão do texto */
+                selection-background-color: #3a3a3a;
+                selection-color: #ffffff;
             }
+            /* Foco discreto em cinza médio (sem linha azul) */
             QLineEdit:focus, QComboBox:focus {
-                border: 1px solid #0066cc;
+                border: 1px solid #555555;
             }
             QLineEdit:read-only {
                 background-color: #181818;
@@ -61,9 +65,9 @@ class Chip7View(QWidget):
             QLabel.lbl-box {
                 background-color: #1e1e1e;
                 border: 1px solid #3a3a3a;
-                border-radius: 4px;
+                border-radius: 8px;
                 color: #cccccc;
-                padding: 5px 8px;
+                padding: 6px 10px;
                 font-size: 12px;
             }
 
@@ -71,8 +75,8 @@ class Chip7View(QWidget):
                 background-color: #333333;
                 color: #ffffff;
                 border: 1px solid #444444;
-                border-radius: 4px;
-                padding: 4px 12px;
+                border-radius: 8px;
+                padding: 5px 14px;
                 font-weight: bold;
             }
             QPushButton#btn_alterar:hover {
@@ -126,13 +130,13 @@ class Chip7View(QWidget):
         ly_qual.addWidget(self.cmb_qualidade, stretch=1)
         ly_captura.addLayout(ly_qual)
 
-        # Botões de Ação
+        # Botões de Ação com Cantos Arredondados
         ly_btns = QHBoxLayout()
         self.btn_avulso = QPushButton("⚡ Baixar Mídia Avulsa")
-        self.btn_avulso.setStyleSheet("background-color: #0066cc; color: white; font-weight: bold; padding: 7px; border-radius: 4px; border: none;")
+        self.btn_avulso.setStyleSheet("background-color: #0066cc; color: white; font-weight: bold; padding: 8px; border-radius: 8px; border: none;")
         
         self.btn_curso = QPushButton("🗺️ Mapear e Baixar Curso / Playlist")
-        self.btn_curso.setStyleSheet("background-color: #2ecc71; color: white; font-weight: bold; padding: 7px; border-radius: 4px; border: none;")
+        self.btn_curso.setStyleSheet("background-color: #2ecc71; color: white; font-weight: bold; padding: 8px; border-radius: 8px; border: none;")
         
         ly_btns.addWidget(self.btn_avulso)
         ly_btns.addWidget(self.btn_curso)
@@ -210,10 +214,10 @@ class Chip7View(QWidget):
         self.lbl_status_global.setStyleSheet("""
             background-color: #1e1e1e;
             border: 1px solid #3a3a3a;
-            border-radius: 4px;
+            border-radius: 8px;
             color: #aaaaaa;
             font-size: 11px;
-            padding: 5px 8px;
+            padding: 5px 10px;
         """)
         
         self.pbar_global = QProgressBar()
@@ -224,7 +228,7 @@ class Chip7View(QWidget):
         self.pbar_global.setStyleSheet("""
             QProgressBar {
                 border: 1px solid #3a3a3a;
-                border-radius: 4px;
+                border-radius: 8px;
                 text-align: center;
                 background-color: #1e1e1e;
                 color: #ffffff;
@@ -232,6 +236,7 @@ class Chip7View(QWidget):
             }
             QProgressBar::chunk {
                 background-color: #2ecc71;
+                border-radius: 6px;
             }
         """)
 
@@ -246,10 +251,16 @@ class Chip7View(QWidget):
 
         self.tabela = QTableWidget(0, 4)
         self.tabela.setHorizontalHeaderLabels(["#", "Título / Nome do Arquivo", "Caminho Salvo", "Status"])
-        self.tabela.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.tabela.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        self.tabela.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
-        self.tabela.setColumnWidth(3, 110)
+        
+        header = self.tabela.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        
+        # Largura enxuta para a 1ª coluna (#) e largura expandida para Status (220px)
+        self.tabela.setColumnWidth(0, 45)
+        self.tabela.setColumnWidth(3, 220)
 
         self._configurar_estilo_tabela(self.tabela)
         ly_tab.addWidget(self.tabela)
@@ -263,7 +274,7 @@ class Chip7View(QWidget):
                 gridline-color: #3a3a3a;
                 background-color: #1a1a1a;
                 border: 1px solid #3a3a3a;
-                border-radius: 4px;
+                border-radius: 10px;
             }
             QTableWidget::item {
                 border: none;
@@ -277,11 +288,10 @@ class Chip7View(QWidget):
                 border-bottom: 1px solid #3a3a3a;
                 border-top: none;
                 border-left: none;
-                padding: 4px;
+                padding: 6px;
                 font-weight: bold;
             }
         """)
-        tabela.setColumnWidth(0, 45)
 
     def _conectar_acoes(self):
         self.btn_avulso.clicked.connect(lambda: self._iniciar_download(modo_avulso=True))
@@ -328,7 +338,7 @@ class Chip7View(QWidget):
         pbar.setStyleSheet("""
             QProgressBar {
                 border: 1px solid #3a3a3a;
-                border-radius: 4px;
+                border-radius: 6px;
                 text-align: center;
                 background-color: #1e1e1e;
                 color: #ffffff;
@@ -337,7 +347,7 @@ class Chip7View(QWidget):
             }
             QProgressBar::chunk {
                 background-color: #2ecc71;
-                border-radius: 3px;
+                border-radius: 4px;
             }
         """)
         return pbar
@@ -379,7 +389,7 @@ class Chip7View(QWidget):
                     pbar.setStyleSheet("""
                         QProgressBar {
                             border: 1px solid #3a3a3a;
-                            border-radius: 4px;
+                            border-radius: 6px;
                             text-align: center;
                             background-color: #1e1e1e;
                             color: #ffffff;
@@ -388,7 +398,7 @@ class Chip7View(QWidget):
                         }
                         QProgressBar::chunk {
                             background-color: #e74c3c;
-                            border-radius: 3px;
+                            border-radius: 4px;
                         }
                     """)
         else:
@@ -411,7 +421,6 @@ class Chip7View(QWidget):
                 pbar.setFormat("%p%")
 
             self.tabela.setCellWidget(row, 3, pbar)
-            self.tabela.setColumnWidth(0, 45)
 
     def _on_concluido(self, sucesso, mensagem):
         self.btn_avulso.setEnabled(True)

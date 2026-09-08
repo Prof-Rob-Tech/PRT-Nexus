@@ -83,77 +83,43 @@ class Chip7Worker(QThread):
             driver.get(self.url)
             time.sleep(5)
 
-            self.progresso.emit("A mapear módulos e aulas do menu lateral...", 40)
-            time.sleep(3) # Dá tempo para a barra lateral carregar completamente
+            self.progresso.emit("A mapear aulas da barra lateral...", 40)
+            time.sleep(3)
             
-            seletor_modulos = "[class*='module'], [class*='modulo'], [class*='accordion'], [class*='section'], .sidebar div[class*='group']"
-            modulos_elems = driver.find_elements(By.CSS_SELECTOR, seletor_modulos)
+            # Busca especificamente os elementos da lista lateral do curso
+            elementos_menu = driver.find_elements(By.CSS_SELECTOR, "aside a, aside button, .sidebar a, .sidebar button, div[class*='lesson'] a, div[class*='aula'] a, a[href*='/aluno/']")
             
-            estrutura_curso = []
-
-            if modulos_elems:
-                for idx_m, mod_elem in enumerate(modulos_elems, 1):
-                    try:
-                        try:
-                            mod_elem.click()
-                            time.sleep(0.5)
-                        except Exception:
-                            pass
-
-                        texto_bruto = mod_elem.text.split('\n')[0].strip() if mod_elem.text else f"Modulo_{idx_m}"
-                        mod_titulo = self.limpar_nome(texto_bruto) or f"Modulo_{idx_m}"
-
-                        aulas_elems = mod_elem.find_elements(By.CSS_SELECTOR, "a, button, li, [class*='lesson'], [class*='aula']")
-                        aulas = []
-
-                        for idx_a, aula_elem in enumerate(aulas_elems, 1):
-                            href = aula_elem.get_attribute("href")
-                            texto_aula = aula_elem.text.strip().split('\n')[0] if aula_elem.text else ""
-                            
-                            if not texto_aula:
-                                continue
-                                
-                            nome_aula_limpo = self.limpar_nome(texto_aula)
-                            if not nome_aula_limpo or nome_aula_limpo == mod_titulo:
-                                continue
-
-                            aulas.append({
-                                "num_aula": len(aulas) + 1,
-                                "titulo": nome_aula_limpo,
-                                "url": href,
-                                "xpath": f"(//*[contains(text(), '{texto_aula[:15]}')])[1]"
-                            })
-
-                        if aulas:
-                            estrutura_curso.append({
-                                "num_mod": idx_m,
-                                "titulo_mod": mod_titulo,
-                                "aulas": aulas
-                            })
-                    except Exception:
+            aulas = []
+            termos_bloqueados = ["BEM VINDO", "CURSOS EAD", "CURSOS PRESENCIAIS", "CARRINHO", "ENTRAR", "CRIAR CONTA", "ÁREA DO ALUNO", "SAIR"]
+            
+            for elem in elementos_menu:
+                try:
+                    txt = self.limpar_nome(elem.text.split('\n')[0])
+                    href = elem.get_attribute("href") or ""
+                    
+                    # Ignora links do topo e páginas externas/da loja
+                    if any(termo in txt.upper() for termo in termos_bloqueados):
+                        continue
+                    if any(ignorar in href for ignorar in ["/presencial", "/carrinho", "/login"]):
                         continue
 
-            if not estrutura_curso:
-                links_aulas = driver.find_elements(By.CSS_SELECTOR, "aside a, nav a, .sidebar a")
-                aulas_fallback = []
-                for idx_a, link in enumerate(links_aulas, 1):
-                    txt = self.limpar_nome(link.text.split('\n')[0])
-                    href = link.get_attribute("href")
-                    if txt and href:
-                        aulas_fallback.append({
-                            "num_aula": idx_a,
+                    if txt and len(txt) > 2:
+                        aulas.append({
+                            "num_aula": len(aulas) + 1,
                             "titulo": txt,
-                            "url": href,
-                            "xpath": None
+                            "url": href if href != driver.current_url else None,
+                            "texto_original": elem.text.strip().split('\n')[0]
                         })
-                if aulas_fallback:
-                    estrutura_curso = [{
-                        "num_mod": 1,
-                        "titulo_mod": "Modulo_Geral",
-                        "aulas": aulas_fallback
-                    }]
+                except Exception:
+                    continue
 
-            if not estrutura_curso:
+            if aulas:
+                estrutura_curso = [{
+                    "num_mod": 1,
+                    "titulo_mod": "Curso Completo",
+                    "aulas": aulas
+                }]
+            else:
                 titulo_pag = self.limpar_nome(driver.title or "Aula_Chip7")
                 estrutura_curso = [{
                     "num_mod": 1,
@@ -162,7 +128,7 @@ class Chip7Worker(QThread):
                         "num_aula": 1,
                         "titulo": titulo_pag,
                         "url": driver.current_url,
-                        "xpath": None
+                        "texto_original": None
                     }]
                 }]
 
@@ -183,19 +149,19 @@ class Chip7Worker(QThread):
 
                     self.item_concluido.emit({
                         "num": id_tabela,
-                        "titulo": f"[{modulo['titulo_mod']}] {aula['titulo']}",
+                        "titulo": aula['titulo'],
                         "caminho": caminho_arquivo,
                         "status": "A carregar..."
                     })
 
                     try:
-                        if aula["url"] and aula["url"] != driver.current_url:
+                        if aula["url"]:
                             driver.get(aula["url"])
-                            time.sleep(5) # Espera a página e o iframe carregarem
-                        elif aula["xpath"]:
-                            elem_clique = driver.find_element(By.XPATH, aula["xpath"])
-                            elem_clique.click()
-                            time.sleep(5)
+                            time.sleep(4)
+                        elif aula["texto_original"]:
+                            alvo = driver.find_element(By.XPATH, f"//*[contains(text(), '{aula['texto_original'][:15]}')]")
+                            driver.execute_script("arguments[0].click();", alvo)
+                            time.sleep(4)
                     except Exception:
                         pass
 
@@ -215,12 +181,11 @@ class Chip7Worker(QThread):
                                 video_url = src
                                 break
 
-                    # SE NÃO ENCONTRAR VÍDEO, PULA A AULA EM VEZ DE DAR ERRO
                     if not video_url:
                         self.item_progresso.emit(id_tabela, 100)
                         self.item_concluido.emit({
                             "num": id_tabela,
-                            "titulo": f"[{modulo['titulo_mod']}] {aula['titulo']}",
+                            "titulo": aula['titulo'],
                             "caminho": "-",
                             "status": "Ignorado (Sem vídeo)"
                         })
@@ -241,9 +206,7 @@ class Chip7Worker(QThread):
                             agora = time.time()
                             if agora - ultima_atualizacao[0] > 0.2:
                                 ultima_atualizacao[0] = agora
-                                
                                 self.item_progresso.emit(id_tabela, pct_int)
-                                
                                 base_pct = int(((aulas_processadas - 1) / total_aulas) * 100)
                                 atual_pct = int(base_pct + (pct_int / total_aulas))
                                 self.progresso.emit(
@@ -273,12 +236,12 @@ class Chip7Worker(QThread):
                     self.item_progresso.emit(id_tabela, 100)
                     self.item_concluido.emit({
                         "num": id_tabela,
-                        "titulo": f"[{modulo['titulo_mod']}] {aula['titulo']}",
+                        "titulo": aula['titulo'],
                         "caminho": caminho_arquivo,
                         "status": "Concluído"
                     })
 
-            self.progresso.emit("Todos os módulos e aulas foram descarregados!", 100)
+            self.progresso.emit("Aulas descarregadas com sucesso!", 100)
             self.concluido.emit(True, "Processo concluído com sucesso!")
 
         except Exception as e:
