@@ -1,6 +1,6 @@
 import os
-import time
 import re
+import time
 from PySide6.QtCore import QThread, Signal
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -11,6 +11,118 @@ try:
     import yt_dlp
 except ImportError:
     yt_dlp = None
+
+
+class Chip7Mapper:
+    # Marca do site e navegações globais para ignorar
+    TERMOS_BLOQUEADOS = [
+        "CHIP 7", "CHIP 7 CURSOS", "CHIP7", "CHIP7 CURSOS", "CHIP 7 - CURSOS",
+        "BEM VINDO", "BEM-VINDO", "CURSOS EAD", "CURSOS PRESENCIAIS", 
+        "CARRINHO", "CARRINHO DO ALUNO", "ENTRAR", "CRIAR CONTA", 
+        "ÁREA DO ALUNO", "AREA DO ALUNO", "SAIR", "MINHA CONTA", 
+        "MEUS CURSOS", "HOME", "INÍCIO", "INICIO", "CONTATO"
+    ]
+
+    # Títulos de cabeçalho das seções (não são links de vídeo)
+    TITULOS_SECOES = [
+        "MÉTODO CHIP", 
+        "IPHONE X AO 13 PRO MAX", 
+        "BÔNUS FACE ID"
+    ]
+
+    def __init__(self, driver=None):
+        self.driver = driver
+
+    def limpar_nome(self, texto):
+        if not texto:
+            return ""
+        texto = re.sub(r'\.mp4$', '', texto, flags=re.IGNORECASE)
+        texto = re.sub(r'[\\/*?:"<>|]', "", texto)
+        return re.sub(r'\s+', ' ', texto).strip()
+
+    def eh_termo_invalido(self, texto):
+        if not texto:
+            return True
+        txt_upper = texto.upper().strip()
+        
+        # Ignora termos de sistema e a marca "CHIP 7"
+        if any(termo == txt_upper or termo in txt_upper for termo in self.TERMOS_BLOQUEADOS):
+            return True
+            
+        # Ignora se for título de seção sem aula
+        if txt_upper in [s.upper() for s in self.TITULOS_SECOES]:
+            return True
+            
+        return False
+
+    def extrair_nome_modulo(self):
+        """Captura o nome do módulo ('FACE ID 3.0')."""
+        try:
+            elementos = self.driver.find_elements(By.XPATH, "//*[contains(text(), 'Área do aluno') or contains(text(), 'Area do aluno')]")
+            for el in elementos:
+                texto = el.text.strip()
+                if "/" in texto:
+                    nome = texto.split("/")[-1].strip()
+                    nome_limpo = self.limpar_nome(nome)
+                    if nome_limpo and not self.eh_termo_invalido(nome_limpo):
+                        return nome_limpo
+
+            breadcrumbs = self.driver.find_elements(By.CSS_SELECTOR, ".breadcrumb, nav[aria-label='breadcrumb']")
+            for bc in breadcrumbs:
+                if "/" in bc.text:
+                    nome = self.limpar_nome(bc.text.split("/")[-1])
+                    if nome and not self.eh_termo_invalido(nome):
+                        return nome
+        except Exception:
+            pass
+        return "FACE ID 3.0"
+
+    def mapear_curso(self, driver=None):
+        if driver:
+            self.driver = driver
+
+        nome_modulo = self.extrair_nome_modulo()
+        aulas = []
+        vistos = set()
+
+        # Busca links preferencialmente do menu lateral ou da página
+        elementos_a = self.driver.find_elements(By.XPATH, "//aside//a | //div[contains(@class, 'sidebar')]//a | //div[contains(@class, 'menu')]//a | //ul//li//a | //a")
+
+        for elem in elementos_a:
+            try:
+                txt_bruto = elem.text.strip().split('\n')[0]
+                txt = self.limpar_nome(txt_bruto)
+                href = elem.get_attribute("href") or ""
+
+                # Descarta se o texto for muito curto ou for termo bloqueado
+                if not txt or len(txt) < 3 or self.eh_termo_invalido(txt):
+                    continue
+
+                # Descarta links de sistema ou topo/carrinho
+                if any(ign in href for ign in ["/carrinho", "/login", "/presencial", "cart", "/sair", "/conta", "whatsapp"]):
+                    continue
+
+                # Evita capturar o nome do módulo principal como aula
+                if txt.upper() == nome_modulo.upper():
+                    continue
+
+                if txt not in vistos:
+                    vistos.add(txt)
+                    aulas.append({
+                        "num_aula": len(aulas) + 1,
+                        "titulo": txt,
+                        "url": href,
+                        "texto_original": txt_bruto
+                    })
+
+            except Exception:
+                continue
+
+        return [{
+            "num_mod": 1,
+            "titulo_mod": nome_modulo,
+            "aulas": aulas
+        }]
 
 
 class Chip7Worker(QThread):
@@ -26,13 +138,6 @@ class Chip7Worker(QThread):
         self.senha = senha
         self.destino = destino
         self.modo_avulso = modo_avulso
-
-    def limpar_nome(self, texto):
-        if not texto:
-            return ""
-        texto = re.sub(r'\.mp4$', '', texto, flags=re.IGNORECASE)
-        texto = re.sub(r'[\\/*?:"<>|]', "", texto)
-        return re.sub(r'\s+', ' ', texto).strip()
 
     def run(self):
         driver = None
@@ -75,65 +180,25 @@ class Chip7Worker(QThread):
                 btn_login.click()
                 
                 self.progresso.emit("Aguardando autenticação...", 30)
-                time.sleep(5)
+                time.sleep(6)
             except Exception:
                 pass
 
-            self.progresso.emit("A aceder ao conteúdo do curso...", 35)
+            self.progresso.emit("A carregar a página do curso...", 35)
             driver.get(self.url)
-            time.sleep(5)
+            time.sleep(6)
 
-            self.progresso.emit("A mapear aulas da barra lateral...", 40)
-            time.sleep(3)
+            self.progresso.emit("A identificar módulo e mapear aulas...", 40)
             
-            # Busca especificamente os elementos da lista lateral do curso
-            elementos_menu = driver.find_elements(By.CSS_SELECTOR, "aside a, aside button, .sidebar a, .sidebar button, div[class*='lesson'] a, div[class*='aula'] a, a[href*='/aluno/']")
-            
-            aulas = []
-            termos_bloqueados = ["BEM VINDO", "CURSOS EAD", "CURSOS PRESENCIAIS", "CARRINHO", "ENTRAR", "CRIAR CONTA", "ÁREA DO ALUNO", "SAIR"]
-            
-            for elem in elementos_menu:
-                try:
-                    txt = self.limpar_nome(elem.text.split('\n')[0])
-                    href = elem.get_attribute("href") or ""
-                    
-                    # Ignora links do topo e páginas externas/da loja
-                    if any(termo in txt.upper() for termo in termos_bloqueados):
-                        continue
-                    if any(ignorar in href for ignorar in ["/presencial", "/carrinho", "/login"]):
-                        continue
-
-                    if txt and len(txt) > 2:
-                        aulas.append({
-                            "num_aula": len(aulas) + 1,
-                            "titulo": txt,
-                            "url": href if href != driver.current_url else None,
-                            "texto_original": elem.text.strip().split('\n')[0]
-                        })
-                except Exception:
-                    continue
-
-            if aulas:
-                estrutura_curso = [{
-                    "num_mod": 1,
-                    "titulo_mod": "Curso Completo",
-                    "aulas": aulas
-                }]
-            else:
-                titulo_pag = self.limpar_nome(driver.title or "Aula_Chip7")
-                estrutura_curso = [{
-                    "num_mod": 1,
-                    "titulo_mod": "Módulo Único",
-                    "aulas": [{
-                        "num_aula": 1,
-                        "titulo": titulo_pag,
-                        "url": driver.current_url,
-                        "texto_original": None
-                    }]
-                }]
+            mapper = Chip7Mapper(driver)
+            estrutura_curso = mapper.mapear_curso()
 
             total_aulas = sum(len(m["aulas"]) for m in estrutura_curso)
             aulas_processadas = 0
+
+            if total_aulas == 0:
+                self.concluido.emit(False, "Nenhuma aula foi encontrada na página. Verifique o link informado.")
+                return
 
             for modulo in estrutura_curso:
                 nome_pasta_modulo = f"{modulo['num_mod']:02d} - {modulo['titulo_mod']}"
@@ -151,24 +216,26 @@ class Chip7Worker(QThread):
                         "num": id_tabela,
                         "titulo": aula['titulo'],
                         "caminho": caminho_arquivo,
-                        "status": "A carregar..."
+                        "status": "A localizar vídeo..."
                     })
 
                     try:
-                        if aula["url"]:
+                        if aula["url"] and aula["url"] != driver.current_url:
                             driver.get(aula["url"])
-                            time.sleep(4)
+                            time.sleep(5)
                         elif aula["texto_original"]:
                             alvo = driver.find_element(By.XPATH, f"//*[contains(text(), '{aula['texto_original'][:15]}')]")
                             driver.execute_script("arguments[0].click();", alvo)
-                            time.sleep(4)
+                            time.sleep(5)
                     except Exception:
                         pass
 
                     video_url = None
+                    time.sleep(3)
+                    
                     iframes = driver.find_elements(By.TAG_NAME, "iframe")
                     for iframe in iframes:
-                        src = iframe.get_attribute("src") or ""
+                        src = iframe.get_attribute("src") or iframe.get_attribute("data-src") or ""
                         if any(p in src for p in ["vimeo", "youtube", "panda", "wistia", "player", "embed", "converteai"]):
                             video_url = src
                             break
@@ -230,8 +297,11 @@ class Chip7Worker(QThread):
                             'progress_hooks': [hook_download]
                         }
                         
-                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                            ydl.download([video_url])
+                        try:
+                            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                                ydl.download([video_url])
+                        except Exception as err:
+                            print(f"Erro no download yt_dlp: {err}")
 
                     self.item_progresso.emit(id_tabela, 100)
                     self.item_concluido.emit({
@@ -241,7 +311,7 @@ class Chip7Worker(QThread):
                         "status": "Concluído"
                     })
 
-            self.progresso.emit("Aulas descarregadas com sucesso!", 100)
+            self.progresso.emit("Processo concluído!", 100)
             self.concluido.emit(True, "Processo concluído com sucesso!")
 
         except Exception as e:
