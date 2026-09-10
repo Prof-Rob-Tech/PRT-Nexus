@@ -14,20 +14,32 @@ except ImportError:
 
 
 class Chip7Mapper:
-    # Marca do site e navegações globais para ignorar
-    TERMOS_BLOQUEADOS = [
-        "CHIP 7", "CHIP 7 CURSOS", "CHIP7", "CHIP7 CURSOS", "CHIP 7 - CURSOS",
-        "BEM VINDO", "BEM-VINDO", "CURSOS EAD", "CURSOS PRESENCIAIS", 
-        "CARRINHO", "CARRINHO DO ALUNO", "ENTRAR", "CRIAR CONTA", 
-        "ÁREA DO ALUNO", "AREA DO ALUNO", "SAIR", "MINHA CONTA", 
-        "MEUS CURSOS", "HOME", "INÍCIO", "INICIO", "CONTATO"
+    # Bloqueio por trechos contidos na frase
+    TRECHOS_BLOQUEADOS = [
+        "SE ESPECIALIZE", "TREINAMENTOS", "WHATSAPP", "INSTAGRAM", "YOUTUBE",
+        "FACEBOOK", "TELEGRAM", "TIKTOK", "CARRINHO", "MINHA CONTA",
+        "MEUS CURSOS", "ÁREA DO ALUNO", "AREA DO ALUNO", "FALE CONOSCO",
+        "ATENDIMENTO", "POLÍTICA DE PRIVACIDADE", "TERMOS DE USO",
+        "TODOS OS DIREITOS", "DIREITOS RESERVADOS", "LOGOUT", "SAIR",
+        "BEM VINDO", "BEM-VINDO", "CURSOS EAD", "CURSOS PRESENCIAIS",
+        "MEUS CERTIFICADOS", "DÚVIDAS", "DUVIDAS", "MEU PERFIL"
     ]
 
-    # Títulos de cabeçalho das seções (não são links de vídeo)
-    TITULOS_SECOES = [
-        "MÉTODO CHIP", 
-        "IPHONE X AO 13 PRO MAX", 
-        "BÔNUS FACE ID"
+    # Nomes exatos de seções/categorias do menu que não são aulas
+    SECOES_CATEGORIAS = [
+        "MÉTODO CHIP", "METODO CHIP", "BÔNUS FACE ID", "BONUS FACE ID",
+        "FACE ID 3.0"
+    ]
+
+    DOMINIOS_BLOQUEADOS = [
+        "instagram.com", "youtube.com", "youtu.be", "facebook.com", 
+        "whatsapp.com", "api.whatsapp.com", "wa.me", "t.me", "telegram.org", 
+        "tiktok.com", "twitter.com"
+    ]
+
+    URL_PALAVRAS_BLOQUEADAS = [
+        "/carrinho", "/login", "/presencial", "/sair", "/conta", "whatsapp", 
+        "/logout", "/perfil", "/certificados", "tel:", "mailto:"
     ]
 
     def __init__(self, driver=None):
@@ -40,23 +52,50 @@ class Chip7Mapper:
         texto = re.sub(r'[\\/*?:"<>|]', "", texto)
         return re.sub(r'\s+', ' ', texto).strip()
 
-    def eh_termo_invalido(self, texto):
+    def eh_termo_invalido(self, texto, href=""):
         if not texto:
             return True
         txt_upper = texto.upper().strip()
-        
-        # Ignora termos de sistema e a marca "CHIP 7"
-        if any(termo == txt_upper or termo in txt_upper for termo in self.TERMOS_BLOQUEADOS):
+        href_lower = href.lower() if href else ""
+
+        # 1. Filtro de telefone
+        if re.search(r'\(?\d{2}\)?\s*9?\s*\d{4,5}[-\s\.]?\d{4}', texto):
             return True
-            
-        # Ignora se for título de seção sem aula
-        if txt_upper in [s.upper() for s in self.TITULOS_SECOES]:
+
+        # 2. URLs de suporte/redes
+        if any(dom in href_lower for dom in self.DOMINIOS_BLOQUEADOS):
             return True
-            
+        if any(ign in href_lower for ign in self.URL_PALAVRAS_BLOQUEADAS):
+            return True
+
+        # 3. Bloqueio por trechos parciais (ex: "Se especialize com nossos...")
+        if any(trecho in txt_upper for trecho in self.TRECHOS_BLOQUEADOS):
+            return True
+
+        # 4. Bloqueio de títulos exatos de seções/categorias
+        if txt_upper in self.SECOES_CATEGORIAS:
+            return True
+
         return False
 
+    def expandir_modulos(self):
+        """Abre sanfonas/módulos para revelar as aulas antes de mapear."""
+        try:
+            botoes = self.driver.find_elements(
+                By.XPATH, 
+                "//*[contains(@class, 'accordion') or contains(@class, 'collapse') or contains(@class, 'modulo') or contains(@class, 'folder') or contains(@class, 'card-header')]"
+            )
+            for btn in botoes:
+                try:
+                    if btn.is_displayed():
+                        self.driver.execute_script("arguments[0].click();", btn)
+                        time.sleep(0.3)
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
     def extrair_nome_modulo(self):
-        """Captura o nome do módulo ('FACE ID 3.0')."""
         try:
             elementos = self.driver.find_elements(By.XPATH, "//*[contains(text(), 'Área do aluno') or contains(text(), 'Area do aluno')]")
             for el in elementos:
@@ -66,13 +105,6 @@ class Chip7Mapper:
                     nome_limpo = self.limpar_nome(nome)
                     if nome_limpo and not self.eh_termo_invalido(nome_limpo):
                         return nome_limpo
-
-            breadcrumbs = self.driver.find_elements(By.CSS_SELECTOR, ".breadcrumb, nav[aria-label='breadcrumb']")
-            for bc in breadcrumbs:
-                if "/" in bc.text:
-                    nome = self.limpar_nome(bc.text.split("/")[-1])
-                    if nome and not self.eh_termo_invalido(nome):
-                        return nome
         except Exception:
             pass
         return "FACE ID 3.0"
@@ -81,42 +113,82 @@ class Chip7Mapper:
         if driver:
             self.driver = driver
 
+        self.expandir_modulos()
+        time.sleep(2)
+
         nome_modulo = self.extrair_nome_modulo()
+
+        # Script JS restrito exclusivamente à barra lateral esquerda e abaixo do cabeçalho
+        js_script = """
+        return (function() {
+            let items = [];
+            let rawElements = document.querySelectorAll('aside *, .sidebar *, [class*="sidebar"] *, [class*="menu"] *, [class*="playlist"] *, [class*="aula"] *, [class*="lesson"] *, a, li, p, span, div');
+            let widthThreshold = window.innerWidth * 0.38; // Restringe à coluna esquerda (menu lateral)
+
+            rawElements.forEach(el => {
+                let rect = el.getBoundingClientRect();
+                
+                // Descarte por posição: ignora o cabeçalho superior (top < 130) e fora da coluna esquerda
+                if (rect.width === 0 || rect.height === 0 || rect.top < 130 || rect.left > widthThreshold) {
+                    return;
+                }
+
+                // Evita containers grandes que possuem filhos com texto
+                let children = Array.from(el.children);
+                let temFilhoComTexto = children.some(c => {
+                    let r = c.getBoundingClientRect();
+                    let t = c.innerText ? c.innerText.trim() : '';
+                    return r.width > 0 && r.height > 0 && t.length > 0 && 
+                           ['DIV', 'A', 'LI', 'UL', 'P', 'H1', 'H2', 'H3', 'H4', 'H5', 'SECTION', 'NAV'].includes(c.tagName);
+                });
+
+                if (temFilhoComTexto) return;
+
+                let txt = el.innerText ? el.innerText.trim() : '';
+                if (!txt) return;
+
+                txt = txt.replace(/\\s+/g, ' ');
+
+                if (txt.length >= 3 && txt.length <= 120) {
+                    let href = el.getAttribute('href') || (el.tagName === 'A' ? el.href : '');
+                    items.push({
+                        text: txt,
+                        href: href || '',
+                        tag: el.tagName
+                    });
+                }
+            });
+            return items;
+        })();
+        """
+
+        candidatos_js = self.driver.execute_script(js_script) or []
+
         aulas = []
         vistos = set()
 
-        # Busca links preferencialmente do menu lateral ou da página
-        elementos_a = self.driver.find_elements(By.XPATH, "//aside//a | //div[contains(@class, 'sidebar')]//a | //div[contains(@class, 'menu')]//a | //ul//li//a | //a")
+        for cand in candidatos_js:
+            txt = self.limpar_nome(cand["text"])
+            href = cand["href"]
 
-        for elem in elementos_a:
-            try:
-                txt_bruto = elem.text.strip().split('\n')[0]
-                txt = self.limpar_nome(txt_bruto)
-                href = elem.get_attribute("href") or ""
-
-                # Descarta se o texto for muito curto ou for termo bloqueado
-                if not txt or len(txt) < 3 or self.eh_termo_invalido(txt):
-                    continue
-
-                # Descarta links de sistema ou topo/carrinho
-                if any(ign in href for ign in ["/carrinho", "/login", "/presencial", "cart", "/sair", "/conta", "whatsapp"]):
-                    continue
-
-                # Evita capturar o nome do módulo principal como aula
-                if txt.upper() == nome_modulo.upper():
-                    continue
-
-                if txt not in vistos:
-                    vistos.add(txt)
-                    aulas.append({
-                        "num_aula": len(aulas) + 1,
-                        "titulo": txt,
-                        "url": href,
-                        "texto_original": txt_bruto
-                    })
-
-            except Exception:
+            if len(txt) < 3 or len(txt) > 150:
                 continue
+
+            if self.eh_termo_invalido(txt, href):
+                continue
+
+            txt_upper = txt.upper()
+            if txt_upper == nome_modulo.upper():
+                continue
+
+            if txt not in vistos:
+                vistos.add(txt)
+                aulas.append({
+                    "num_aula": len(aulas) + 1,
+                    "titulo": txt,
+                    "url": href if href and not href.endswith("#") and "javascript:" not in href else "",
+                    "texto_original": cand["text"]
+                })
 
         return [{
             "num_mod": 1,
@@ -180,13 +252,13 @@ class Chip7Worker(QThread):
                 btn_login.click()
                 
                 self.progresso.emit("Aguardando autenticação...", 30)
-                time.sleep(6)
+                time.sleep(8)
             except Exception:
                 pass
 
             self.progresso.emit("A carregar a página do curso...", 35)
             driver.get(self.url)
-            time.sleep(6)
+            time.sleep(8)
 
             self.progresso.emit("A identificar módulo e mapear aulas...", 40)
             
@@ -197,7 +269,7 @@ class Chip7Worker(QThread):
             aulas_processadas = 0
 
             if total_aulas == 0:
-                self.concluido.emit(False, "Nenhuma aula foi encontrada na página. Verifique o link informado.")
+                self.concluido.emit(False, "Nenhuma aula válida foi encontrada no menu. Verifique o link informado.")
                 return
 
             for modulo in estrutura_curso:
@@ -222,16 +294,35 @@ class Chip7Worker(QThread):
                     try:
                         if aula["url"] and aula["url"] != driver.current_url:
                             driver.get(aula["url"])
-                            time.sleep(5)
+                            time.sleep(4)
                         elif aula["texto_original"]:
-                            alvo = driver.find_element(By.XPATH, f"//*[contains(text(), '{aula['texto_original'][:15]}')]")
-                            driver.execute_script("arguments[0].click();", alvo)
-                            time.sleep(5)
+                            texto_busca = re.sub(r'[\'"]', '', aula['texto_original']).strip()
+                            if len(texto_busca) > 15:
+                                texto_busca = texto_busca[:15]
+
+                            alvo = None
+                            try:
+                                elementos_pagina = driver.find_elements(
+                                    By.XPATH, 
+                                    f"//*[contains(translate(text(), 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'), '{texto_busca.upper()}')]"
+                                )
+                                for el in elementos_pagina:
+                                    if el.is_displayed() and el.location['x'] < 400 and el.location['y'] > 130:
+                                        alvo = el
+                                        break
+                            except Exception:
+                                pass
+
+                            if alvo:
+                                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", alvo)
+                                time.sleep(0.5)
+                                driver.execute_script("arguments[0].click();", alvo)
+                                time.sleep(4)
                     except Exception:
                         pass
 
                     video_url = None
-                    time.sleep(3)
+                    time.sleep(2)
                     
                     iframes = driver.find_elements(By.TAG_NAME, "iframe")
                     for iframe in iframes:
