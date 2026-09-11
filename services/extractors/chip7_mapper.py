@@ -106,7 +106,7 @@ class Chip7Mapper:
         except Exception:
             pass
 
-        return "FACE ID 3.0"
+        return "CONTEÚDO"
 
     def mapear_curso(self, driver=None):
         if driver:
@@ -140,7 +140,7 @@ class Chip7Mapper:
                 let cls = (el.className && typeof el.className === 'string') ? el.className.toLowerCase() : '';
 
                 let isHeaderTag = ['H1', 'H2', 'H3', 'H4', 'H5'].includes(tag);
-                let isHeaderClass = cls.includes('card-header') || cls.includes('accordion') || cls.includes('modulo-header') || cls.includes('folder') || cls.includes('section');
+                let isHeaderClass = cls.includes('card-header') || cls.includes('accordion') || cls.includes('modulo-header') || cls.includes('folder') || cls.includes('section') || cls.includes('title');
                 let hasToggle = el.hasAttribute('data-toggle') || el.hasAttribute('data-bs-toggle') || el.hasAttribute('aria-expanded');
 
                 items.push({
@@ -170,16 +170,21 @@ class Chip7Mapper:
             if self.eh_termo_invalido(txt, href):
                 continue
 
-            if txt.upper() == nome_modulo.upper() or txt.upper() == "FACE ID 3.0":
+            if txt.upper() == nome_modulo.upper():
                 continue
 
             tem_link_aula = bool(href and not href.endswith("#") and "javascript:" not in href and "whatsapp" not in href.lower())
-
             txt_upper = txt.upper()
             txt_limpo = re.sub(r'^\d+[\s\.\-]*', '', txt_upper).strip()
 
-            eh_header_sub = cand["isSubHeader"] and not tem_link_aula
-            eh_nome_sub_tipico = any(txt_limpo.startswith(pref) for pref in ["MÉTODO", "METODO", "IPHONE", "BÔNUS", "BONUS", "MÓDULO", "MODULO", "FERRAMENTAS", "OSCILOSCÓPIO"]) and not tem_link_aula
+            # REGRA 1: Se começa explicitamente com "AULA" ou contém indicação de duração, É AULA e NUNCA subcategoria
+            eh_nome_aula_explicito = bool(re.search(r'^AULA\b', txt_limpo)) or bool(re.search(r'\(.*DURAÇÃ?O.*\)', txt_upper))
+
+            # REGRA 2: Palavras do vocabulário de seções
+            palavras_chave_sub = ["COMPLETO", "ESTUDO", "MÉTODO", "METODO", "IPHONE", "BÔNUS", "BONUS", "MÓDULO", "MODULO", "FERRAMENTAS", "OSCILOSCÓPIO", "SÉRIES", "SERIES", "REPARO", "ANÁLISE", "ANALISE"]
+            eh_nome_sub_tipico = any(txt_limpo.startswith(pref) for pref in palavras_chave_sub) and not tem_link_aula and not eh_nome_aula_explicito
+
+            eh_header_sub = (cand["isSubHeader"] or not tem_link_aula) and not eh_nome_aula_explicito
 
             if (eh_header_sub or eh_nome_sub_tipico) and txt_upper not in nomes_sub_criadas:
                 if subcat_atual and len(subcat_atual["aulas"]) > 0:
@@ -196,7 +201,7 @@ class Chip7Mapper:
                 if not subcat_atual:
                     subcat_atual = {
                         "num_sub": 1,
-                        "titulo_sub": "MÉTODO CHIP",
+                        "titulo_sub": "CONTEÚDO PRINCIPAL",
                         "aulas": []
                     }
                     vistos_na_sub = set()
