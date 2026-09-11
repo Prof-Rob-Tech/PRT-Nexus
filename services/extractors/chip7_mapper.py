@@ -53,7 +53,6 @@ class Chip7Mapper:
         txt_upper = texto.upper().strip()
         href_lower = href.lower() if href else ""
 
-        # Ignorar contatos e telefones
         apenas_digitos = re.sub(r'\D', '', texto)
         if len(apenas_digitos) in [10, 11] and re.search(r'^\(?\d{2}\)?', texto.strip()):
             return True
@@ -107,7 +106,7 @@ class Chip7Mapper:
         except Exception:
             pass
 
-        return "Curso Extraido"
+        return "FACE ID 3.0"
 
     def mapear_curso(self, driver=None):
         if driver:
@@ -118,54 +117,10 @@ class Chip7Mapper:
 
         nome_modulo = self.extrair_nome_modulo()
 
-        # JS Script que extrai a estrutura dinamicamente por containers HTML
         js_script = """
         return (function() {
-            let subcategorias = [];
-
-            // Estratégia 1: Buscar por containers de acordeão/cards (estrutura padrão do Chip 7)
-            let cards = Array.from(document.querySelectorAll('.card, .accordion-item, .panel, [class*="modulo-block"], [class*="section-block"], [class*="card-header"]'));
-            
-            if (cards.length > 0) {
-                cards.forEach((card, idx) => {
-                    let headerEl = card.querySelector('.card-header, .accordion-header, [class*="title"], h3, h4, h5, button, a[data-toggle]');
-                    let headerText = headerEl ? headerEl.innerText.split('\\n')[0].trim() : (card.innerText ? card.innerText.split('\\n')[0].trim() : '');
-
-                    let lessonEls = Array.from(card.querySelectorAll('a, button, li, [class*="aula"], [class*="lesson"]'));
-                    let lessons = [];
-
-                    lessonEls.forEach(el => {
-                        let rect = el.getBoundingClientRect();
-                        if (rect.width === 0 && rect.height === 0) return;
-
-                        let txt = el.innerText ? el.innerText.split('\\n')[0].trim() : '';
-                        if (!txt || txt === headerText) return;
-
-                        let href = el.getAttribute('href') || (el.tagName === 'A' ? el.href : '') || '';
-                        
-                        lessons.push({
-                            text: txt,
-                            href: href,
-                            top: rect.top + window.scrollY
-                        });
-                    });
-
-                    if (lessons.length > 0 || headerText.length > 0) {
-                        subcategorias.push({
-                            headerText: headerText,
-                            lessons: lessons
-                        });
-                    }
-                });
-            }
-
-            if (subcategorias.length > 0) {
-                return { mode: 'containers', data: subcategorias };
-            }
-
-            // Estratégia 2: Escaneamento posicional dinâmico
             let items = [];
-            let elements = Array.from(document.querySelectorAll('a, button, li, h1, h2, h3, h4, [class*="aula"], [class*="modulo"]'));
+            let elements = Array.from(document.querySelectorAll('a, button, li, h1, h2, h3, h4, h5, div.card-header, div.accordion-header, [class*="modulo"], [class*="aula"], [class*="lesson"]'));
 
             elements.forEach(el => {
                 let rect = el.getBoundingClientRect();
@@ -184,123 +139,87 @@ class Chip7Mapper:
                 let tag = el.tagName.toUpperCase();
                 let cls = (el.className && typeof el.className === 'string') ? el.className.toLowerCase() : '';
 
-                let hasToggleAttr = el.hasAttribute('data-toggle') || el.hasAttribute('data-bs-toggle') || el.hasAttribute('aria-expanded');
-                let isHeaderTag = ['H1', 'H2', 'H3', 'H4'].includes(tag);
-                let isHeaderClass = cls.includes('card-header') || cls.includes('accordion') || cls.includes('modulo-header');
-
-                let isSubHeader = hasToggleAttr || isHeaderTag || isHeaderClass;
+                let isHeaderTag = ['H1', 'H2', 'H3', 'H4', 'H5'].includes(tag);
+                let isHeaderClass = cls.includes('card-header') || cls.includes('accordion') || cls.includes('modulo-header') || cls.includes('folder') || cls.includes('section');
+                let hasToggle = el.hasAttribute('data-toggle') || el.hasAttribute('data-bs-toggle') || el.hasAttribute('aria-expanded');
 
                 items.push({
                     text: firstLine,
                     href: href,
-                    isSubHeader: isSubHeader,
+                    isSubHeader: isHeaderTag || isHeaderClass || hasToggle,
                     top: rect.top + window.scrollY
                 });
             });
 
             items.sort((a, b) => a.top - b.top);
-            return { mode: 'positional', data: items };
+            return items;
         })();
         """
 
-        res = self.driver.execute_script(js_script) or {}
-        modo = res.get('mode', 'positional')
-        dados = res.get('data', [])
+        candidatos_js = self.driver.execute_script(js_script) or []
 
         subcategorias = []
+        subcat_atual = None
+        vistos_na_sub = set()
+        nomes_sub_criadas = set()
 
-        if modo == 'containers' and dados:
-            for idx, item in enumerate(dados, 1):
-                tit_sub = self.limpar_nome(item.get('headerText'))
-                if not tit_sub or self.eh_termo_invalido(tit_sub):
-                    tit_sub = f"Módulo {idx:02d}"
+        for cand in candidatos_js:
+            txt = self.limpar_nome(cand["text"])
+            href = cand["href"]
 
-                aulas = []
-                vistos = set()
-                for lsn in item.get('lessons', []):
-                    txt_aula = self.limpar_nome(lsn['text'])
-                    href = lsn['href']
+            if self.eh_termo_invalido(txt, href):
+                continue
 
-                    if self.eh_termo_invalido(txt_aula, href):
-                        continue
-                    if txt_aula in vistos:
-                        continue
-                    vistos.add(txt_aula)
+            if txt.upper() == nome_modulo.upper() or txt.upper() == "FACE ID 3.0":
+                continue
 
-                    tem_link = bool(href and not href.endswith("#") and "javascript:" not in href and "whatsapp" not in href.lower())
+            tem_link_aula = bool(href and not href.endswith("#") and "javascript:" not in href and "whatsapp" not in href.lower())
 
-                    aulas.append({
-                        "num_aula": len(aulas) + 1,
-                        "titulo": txt_aula,
-                        "url": href if tem_link else "",
-                        "texto_original": lsn['text']
-                    })
+            txt_upper = txt.upper()
+            txt_limpo = re.sub(r'^\d+[\s\.\-]*', '', txt_upper).strip()
 
-                if aulas:
-                    subcategorias.append({
-                        "num_sub": len(subcategorias) + 1,
-                        "titulo_sub": tit_sub,
-                        "aulas": aulas
-                    })
+            eh_header_sub = cand["isSubHeader"] and not tem_link_aula
+            eh_nome_sub_tipico = any(txt_limpo.startswith(pref) for pref in ["MÉTODO", "METODO", "IPHONE", "BÔNUS", "BONUS", "MÓDULO", "MODULO", "FERRAMENTAS", "OSCILOSCÓPIO"]) and not tem_link_aula
 
-        if not subcategorias and modo == 'positional' and dados:
-            subcat_atual = {
-                "num_sub": 1,
-                "titulo_sub": "Módulo Principal",
-                "aulas": []
-            }
-            vistos_na_sub = set()
+            if (eh_header_sub or eh_nome_sub_tipico) and txt_upper not in nomes_sub_criadas:
+                if subcat_atual and len(subcat_atual["aulas"]) > 0:
+                    subcategorias.append(subcat_atual)
 
-            for cand in dados:
-                txt = self.limpar_nome(cand["text"])
-                href = cand["href"]
+                nomes_sub_criadas.add(txt_upper)
+                subcat_atual = {
+                    "num_sub": len(subcategorias) + 1,
+                    "titulo_sub": txt,
+                    "aulas": []
+                }
+                vistos_na_sub = set()
+            else:
+                if not subcat_atual:
+                    subcat_atual = {
+                        "num_sub": 1,
+                        "titulo_sub": "MÉTODO CHIP",
+                        "aulas": []
+                    }
+                    vistos_na_sub = set()
 
-                if self.eh_termo_invalido(txt, href):
+                if txt.upper() == subcat_atual["titulo_sub"].upper():
                     continue
 
-                if txt.upper() == nome_modulo.upper():
+                if txt in vistos_na_sub:
                     continue
+                vistos_na_sub.add(txt)
 
-                tem_link_aula = bool(href and not href.endswith("#") and "javascript:" not in href and "whatsapp" not in href.lower())
+                subcat_atual["aulas"].append({
+                    "num_aula": len(subcat_atual["aulas"]) + 1,
+                    "titulo": txt,
+                    "url": href if tem_link_aula else "",
+                    "texto_original": cand["text"]
+                })
 
-                eh_sub = False
-                if cand["isSubHeader"] and not tem_link_aula:
-                    eh_sub = True
-                elif re.match(r'^(MÓDULO|MODULO|CAPÍTULO|CAPITULO|SEÇÃO|SECAO|PARTE|BÔNUS|BONUS)\s*\d*', txt, re.IGNORECASE):
-                    eh_sub = True
+        if subcat_atual and len(subcat_atual["aulas"]) > 0:
+            subcategorias.append(subcat_atual)
 
-                if eh_sub:
-                    if len(subcat_atual["aulas"]) > 0:
-                        subcategorias.append(subcat_atual)
-                        subcat_atual = {
-                            "num_sub": len(subcategorias) + 1,
-                            "titulo_sub": txt,
-                            "aulas": []
-                        }
-                        vistos_na_sub = set()
-                    else:
-                        subcat_atual["titulo_sub"] = txt
-                else:
-                    if txt in vistos_na_sub:
-                        continue
-                    vistos_na_sub.add(txt)
-
-                    subcat_atual["aulas"].append({
-                        "num_aula": len(subcat_atual["aulas"]) + 1,
-                        "titulo": txt,
-                        "url": href if tem_link_aula else "",
-                        "texto_original": cand["text"]
-                    })
-
-            if subcat_atual["aulas"]:
-                subcategorias.append(subcat_atual)
-
-        if not subcategorias:
-            subcategorias = [{
-                "num_sub": 1,
-                "titulo_sub": "Módulo Principal",
-                "aulas": []
-            }]
+        for idx, sub in enumerate(subcategorias, 1):
+            sub["num_sub"] = idx
 
         return [{
             "num_mod": 1,
