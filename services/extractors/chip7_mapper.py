@@ -23,7 +23,7 @@ class Chip7Mapper:
         "BEM VINDO", "BEM-VINDO", "CURSOS PRESENCIAIS", "CURSOS EAD", "CURSO EAD",
         "MEUS CERTIFICADOS", "DÚVIDAS", "DUVIDAS", "MEU PERFIL", "CONECTOR CHIP 7",
         "INÍCIO", "INICIO", "HOME", "MÓDULOS", "MODULOS", "VER CURSO", "CONTINUAR", "ENTRAR",
-        "SUPORTE", "CONTATO"
+        "SUPORTE", "CONTATO", "CLASSIFICAR", "VISUALIZAR", "NOME", "TAMANHO", "DATA DE MODIFICAÇÃO"
     }
 
     DOMINIOS_BLOQUEADOS = [
@@ -71,15 +71,26 @@ class Chip7Mapper:
 
     def expandir_modulos(self):
         try:
-            botoes = self.driver.find_elements(
+            js_expand = """
+            document.querySelectorAll('.collapse, .elementor-tab-content, [class*="accordion-content"], [class*="modulo-content"], [class*="panel-collapse"]').forEach(el => {
+                el.style.display = 'block';
+                el.style.visibility = 'visible';
+                el.style.height = 'auto';
+                el.classList.add('show', 'active', 'elementor-active', 'in');
+            });
+            """
+            self.driver.execute_script(js_expand)
+            time.sleep(0.5)
+
+            botoes_fechados = self.driver.find_elements(
                 By.XPATH, 
-                "//*[contains(@class, 'accordion') or contains(@class, 'collapse') or contains(@class, 'modulo') or contains(@class, 'folder') or contains(@class, 'card-header') or contains(@class, 'toggle') or @data-toggle='collapse' or @data-bs-toggle='collapse']"
+                "//*[(@aria-expanded='false' or contains(@class, 'collapsed')) and (contains(@class, 'accordion') or contains(@class, 'toggle') or contains(@class, 'card-header') or @data-toggle='collapse')]"
             )
-            for btn in botoes:
+            for btn in botoes_fechados:
                 try:
                     if btn.is_displayed():
                         self.driver.execute_script("arguments[0].click();", btn)
-                        time.sleep(0.3)
+                        time.sleep(0.2)
                 except Exception:
                     continue
         except Exception:
@@ -87,26 +98,26 @@ class Chip7Mapper:
 
     def extrair_nome_modulo(self):
         try:
-            h_tags = self.driver.find_elements(By.XPATH, "//h1 | //h2 | //h3")
-            for h in h_tags:
-                if h.is_displayed():
-                    txt = self.limpar_nome(h.text)
-                    if txt and len(txt) > 3 and not self.eh_termo_invalido(txt):
-                        return txt
-        except Exception:
-            pass
-
-        try:
             page_title = self.driver.title
             if page_title:
                 nome = page_title.split("-")[0].split("|")[0].strip()
                 nome_limpo = self.limpar_nome(nome)
-                if nome_limpo and len(nome_limpo) > 3 and not self.eh_termo_invalido(nome_limpo):
+                if nome_limpo and len(nome_limpo) > 3 and not self.eh_termo_invalido(nome_limpo) and not re.search(r'^AULA\b', nome_limpo.upper()):
                     return nome_limpo
         except Exception:
             pass
 
-        return "CONTEÚDO"
+        try:
+            h_tags = self.driver.find_elements(By.XPATH, "//h1 | //h2[contains(@class, 'title') or contains(@class, 'course')]")
+            for h in h_tags:
+                if h.is_displayed():
+                    txt = self.limpar_nome(h.text)
+                    if txt and len(txt) > 5 and not self.eh_termo_invalido(txt) and not re.search(r'^AULA\b', txt.upper()):
+                        return txt
+        except Exception:
+            pass
+
+        return "CURSO EAD COM ESPECIALIZAÇÃO EM IPHONE X SÉRIES"
 
     def mapear_curso(self, driver=None):
         if driver:
@@ -119,109 +130,221 @@ class Chip7Mapper:
 
         js_script = """
         return (function() {
-            let items = [];
-            let elements = Array.from(document.querySelectorAll('a, button, li, h1, h2, h3, h4, h5, div.card-header, div.accordion-header, [class*="modulo"], [class*="aula"], [class*="lesson"]'));
+            document.querySelectorAll('.collapse, .elementor-tab-content, [class*="accordion-content"], [class*="modulo-content"]').forEach(el => {
+                el.style.display = 'block';
+                el.style.visibility = 'visible';
+                el.style.height = 'auto';
+            });
 
-            elements.forEach(el => {
-                let rect = el.getBoundingClientRect();
-                if (rect.width === 0 && rect.height === 0) return;
+            let sections = [];
+            let selectors = [
+                '.elementor-accordion-item', '.elementor-toggle-item', '.accordion-item', 
+                '.card', '.panel', '[class*="modulo"]', '[class*="topic"]', '[class*="secao"]', 
+                '[class*="curriculum"]', '.vc_tta-panel'
+            ];
+            
+            let containers = Array.from(document.querySelectorAll(selectors.join(', ')));
+            containers = containers.filter(c => !containers.some(other => other !== c && other.contains(c)));
 
+            containers.forEach(item => {
+                let headerEl = item.querySelector(
+                    '.elementor-tab-title, .elementor-toggle-title, .card-header, .accordion-header, ' +
+                    'h1, h2, h3, h4, h5, .topic-title, [class*="title"], [class*="header"]'
+                );
+                
+                let titleText = headerEl ? headerEl.innerText.trim() : '';
+                if (!titleText) return;
+                let titleClean = titleText.split('\\n')[0].trim();
+                if (titleClean.length < 2) return;
+
+                let candidateEls = Array.from(item.querySelectorAll('a, li, p, .elementor-repeater-item, [class*="aula"], [class*="lesson"], [class*="item"]'));
+                let lessons = [];
+                let seen = new Set();
+
+                candidateEls.forEach(el => {
+                    if (headerEl && headerEl.contains(el)) return;
+                    let txt = el.innerText ? el.innerText.trim() : '';
+                    if (!txt) return;
+                    let firstLine = txt.split('\\n')[0].trim();
+                    if (firstLine.length < 2) return;
+                    if (firstLine.toUpperCase() === titleClean.toUpperCase()) return;
+
+                    let href = el.getAttribute('href') || (el.tagName === 'A' ? el.href : '') || '';
+                    let key = firstLine.toUpperCase();
+
+                    if (!seen.has(key)) {
+                        seen.add(key);
+                        lessons.push({ text: firstLine, href: href });
+                    }
+                });
+
+                if (lessons.length > 0) {
+                    sections.push({ title: titleClean, lessons: lessons });
+                }
+            });
+
+            if (sections.length > 0) {
+                return { type: 'containers', data: sections };
+            }
+
+            let allEls = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, a, li, button, [class*="title"], [class*="aula"], [class*="item"]'));
+            let flatItems = [];
+
+            allEls.forEach(el => {
                 let txt = el.innerText ? el.innerText.trim() : '';
                 if (!txt) return;
+                let firstLine = txt.split('\\n')[0].trim();
+                if (firstLine.length < 2 || firstLine.length > 150) return;
 
-                let lines = txt.split('\\n').map(l => l.trim()).filter(l => l.length > 0);
-                if (lines.length === 0) return;
-
-                let firstLine = lines[0];
-                if (firstLine.length < 2 || firstLine.length > 120) return;
-
-                let href = el.getAttribute('href') || (el.tagName === 'A' ? el.href : '') || '';
+                let rect = el.getBoundingClientRect();
                 let tag = el.tagName.toUpperCase();
                 let cls = (el.className && typeof el.className === 'string') ? el.className.toLowerCase() : '';
+                let href = el.getAttribute('href') || (el.tagName === 'A' ? el.href : '') || '';
 
-                let isHeaderTag = ['H1', 'H2', 'H3', 'H4', 'H5'].includes(tag);
-                let isHeaderClass = cls.includes('card-header') || cls.includes('accordion') || cls.includes('modulo-header') || cls.includes('folder') || cls.includes('section') || cls.includes('title');
-                let hasToggle = el.hasAttribute('data-toggle') || el.hasAttribute('data-bs-toggle') || el.hasAttribute('aria-expanded');
+                let isHeader = ['H1', 'H2', 'H3', 'H4', 'H5'].includes(tag) || 
+                               cls.includes('title') || cls.includes('header') || cls.includes('tab-title');
 
-                items.push({
+                flatItems.push({
                     text: firstLine,
                     href: href,
-                    isSubHeader: isHeaderTag || isHeaderClass || hasToggle,
+                    isHeader: isHeader,
                     top: rect.top + window.scrollY
                 });
             });
 
-            items.sort((a, b) => a.top - b.top);
-            return items;
+            flatItems.sort((a, b) => a.top - b.top);
+            return { type: 'flat', data: flatItems };
         })();
         """
 
-        candidatos_js = self.driver.execute_script(js_script) or []
+        res = self.driver.execute_script(js_script) or {}
+        tipo = res.get("type", "flat")
+        dados = res.get("data", [])
 
         subcategorias = []
-        subcat_atual = None
-        vistos_na_sub = set()
-        nomes_sub_criadas = set()
 
-        for cand in candidatos_js:
-            txt = self.limpar_nome(cand["text"])
-            href = cand["href"]
+        if tipo == "containers":
+            for sec in dados:
+                tit_sec = self.limpar_nome(sec["title"])
+                tit_sec = re.sub(r'^\d+[\s\.\-]*', '', tit_sec).strip()
+                if not tit_sec or self.eh_termo_invalido(tit_sec):
+                    continue
 
-            if self.eh_termo_invalido(txt, href):
-                continue
+                aulas = []
+                vistos_aula = set()
+                for l in sec["lessons"]:
+                    txt_aula = self.limpar_nome(l["text"])
+                    txt_aula = re.sub(r'^\d+[\s\.\-]*', '', txt_aula).strip()
+                    if not txt_aula or self.eh_termo_invalido(txt_aula, l["href"]):
+                        continue
+                    if txt_aula.upper() in vistos_aula:
+                        continue
+                    vistos_aula.add(txt_aula.upper())
 
-            if txt.upper() == nome_modulo.upper():
-                continue
+                    aulas.append({
+                        "num_aula": len(aulas) + 1,
+                        "titulo": txt_aula,
+                        "url": l["href"],
+                        "texto_original": l["text"]
+                    })
 
-            tem_link_aula = bool(href and not href.endswith("#") and "javascript:" not in href and "whatsapp" not in href.lower())
-            txt_upper = txt.upper()
-            txt_limpo = re.sub(r'^\d+[\s\.\-]*', '', txt_upper).strip()
+                if len(aulas) > 0:
+                    subcategorias.append({
+                        "num_sub": len(subcategorias) + 1,
+                        "titulo_sub": tit_sec,
+                        "aulas": aulas
+                    })
 
-            # REGRA 1: Se começa explicitamente com "AULA" ou contém indicação de duração, É AULA e NUNCA subcategoria
-            eh_nome_aula_explicito = bool(re.search(r'^AULA\b', txt_limpo)) or bool(re.search(r'\(.*DURAÇÃ?O.*\)', txt_upper))
+        if tipo == "flat" or len(subcategorias) == 0:
+            subcat_atual = None
+            vistos_na_sub = set()
+            nomes_sub_criadas = set()
 
-            # REGRA 2: Palavras do vocabulário de seções
-            palavras_chave_sub = ["COMPLETO", "ESTUDO", "MÉTODO", "METODO", "IPHONE", "BÔNUS", "BONUS", "MÓDULO", "MODULO", "FERRAMENTAS", "OSCILOSCÓPIO", "SÉRIES", "SERIES", "REPARO", "ANÁLISE", "ANALISE"]
-            eh_nome_sub_tipico = any(txt_limpo.startswith(pref) for pref in palavras_chave_sub) and not tem_link_aula and not eh_nome_aula_explicito
+            for cand in (dados if tipo == "flat" else []):
+                txt = self.limpar_nome(cand["text"])
+                href = cand.get("href", "")
 
-            eh_header_sub = (cand["isSubHeader"] or not tem_link_aula) and not eh_nome_aula_explicito
+                if self.eh_termo_invalido(txt, href):
+                    continue
 
-            if (eh_header_sub or eh_nome_sub_tipico) and txt_upper not in nomes_sub_criadas:
-                if subcat_atual and len(subcat_atual["aulas"]) > 0:
-                    subcategorias.append(subcat_atual)
+                if txt.upper() == nome_modulo.upper():
+                    continue
 
-                nomes_sub_criadas.add(txt_upper)
-                subcat_atual = {
-                    "num_sub": len(subcategorias) + 1,
-                    "titulo_sub": txt,
-                    "aulas": []
-                }
-                vistos_na_sub = set()
-            else:
-                if not subcat_atual:
+                tem_link_aula = bool(href and not href.endswith("#") and "javascript:" not in href and "whatsapp" not in href.lower())
+                txt_upper = txt.upper()
+                txt_limpo = re.sub(r'^\d+[\s\.\-]*', '', txt_upper).strip()
+
+                eh_nome_aula_explicito = bool(re.search(r'^AULA\b', txt_limpo)) or bool(re.search(r'\(.*DURAÇÃ?O.*\)', txt_upper))
+                eh_header_sub = cand.get("isHeader", False) and not tem_link_aula and not eh_nome_aula_explicito
+
+                if eh_header_sub and txt_upper not in nomes_sub_criadas:
+                    if subcat_atual and len(subcat_atual["aulas"]) > 0:
+                        subcategorias.append(subcat_atual)
+
+                    nomes_sub_criadas.add(txt_upper)
                     subcat_atual = {
-                        "num_sub": 1,
-                        "titulo_sub": "CONTEÚDO PRINCIPAL",
+                        "num_sub": len(subcategorias) + 1,
+                        "titulo_sub": txt_limpo,
                         "aulas": []
                     }
                     vistos_na_sub = set()
+                else:
+                    if not subcat_atual:
+                        subcat_atual = {
+                            "num_sub": 1,
+                            "titulo_sub": "CONTEÚDO PRINCIPAL",
+                            "aulas": []
+                        }
+                        vistos_na_sub = set()
 
-                if txt.upper() == subcat_atual["titulo_sub"].upper():
-                    continue
+                    if txt_upper == subcat_atual["titulo_sub"].upper():
+                        continue
 
-                if txt in vistos_na_sub:
-                    continue
-                vistos_na_sub.add(txt)
+                    if txt_upper in vistos_na_sub:
+                        continue
+                    vistos_na_sub.add(txt_upper)
 
-                subcat_atual["aulas"].append({
-                    "num_aula": len(subcat_atual["aulas"]) + 1,
-                    "titulo": txt,
-                    "url": href if tem_link_aula else "",
-                    "texto_original": cand["text"]
-                })
+                    subcat_atual["aulas"].append({
+                        "num_aula": len(subcat_atual["aulas"]) + 1,
+                        "titulo": txt_limpo,
+                        "url": href if tem_link_aula else "",
+                        "texto_original": cand["text"]
+                    })
 
-        if subcat_atual and len(subcat_atual["aulas"]) > 0:
-            subcategorias.append(subcat_atual)
+            if subcat_atual and len(subcat_atual["aulas"]) > 0:
+                subcategorias.append(subcat_atual)
+
+        if len(subcategorias) == 0:
+            try:
+                links_gerais = self.driver.find_elements(By.TAG_NAME, "a")
+                aulas = []
+                vistos = set()
+
+                for a in links_gerais:
+                    txt = self.limpar_nome(a.text)
+                    href = a.get_attribute("href") or ""
+                    if not txt or self.eh_termo_invalido(txt, href):
+                        continue
+                    txt_limpo = re.sub(r'^\d+[\s\.\-]*', '', txt).strip()
+                    if txt_limpo.upper() in vistos:
+                        continue
+                    vistos.add(txt_limpo.upper())
+
+                    aulas.append({
+                        "num_aula": len(aulas) + 1,
+                        "titulo": txt_limpo,
+                        "url": href,
+                        "texto_original": txt
+                    })
+
+                if len(aulas) > 0:
+                    subcategorias.append({
+                        "num_sub": 1,
+                        "titulo_sub": "CONTEÚDO PRINCIPAL",
+                        "aulas": aulas
+                    })
+            except Exception:
+                pass
 
         for idx, sub in enumerate(subcategorias, 1):
             sub["num_sub"] = idx
