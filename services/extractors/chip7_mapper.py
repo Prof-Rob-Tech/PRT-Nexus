@@ -11,13 +11,11 @@ class Chip7Mapper:
         "ATENDIMENTO", "POLÍTICA DE PRIVACIDADE", "TERMOS DE USO",
         "TODOS OS DIREITOS", "DIREITOS RESERVADOS", "LOGOUT", "SAIR",
         "BEM VINDO", "BEM-VINDO", "CURSOS EAD", "CURSOS PRESENCIAIS",
-        "MEUS CERTIFICADOS", "DÚVIDAS", "DUVIDAS", "MEU PERFIL", "CONCLUÍDO", "CONCLUIDO"
+        "MEUS CERTIFICADOS", "DÚVIDAS", "DUVIDAS", "MEU PERFIL", "CONCLUÍDO", "CONCLUIDO",
+        "SUPORTE", "CONTATO", "CHALAT"
     ]
 
-    SECOES_CATEGORIAS = [
-        "MÉTODO CHIP", "METODO CHIP", "BÔNUS FACE ID", "BONUS FACE ID",
-        "FACE ID 3.0"
-    ]
+    SECOES_CATEGORIAS = []
 
     DOMINIOS_BLOQUEADOS = [
         "instagram.com", "youtube.com", "youtu.be", "facebook.com", 
@@ -53,8 +51,10 @@ class Chip7Mapper:
         txt_upper = texto.upper().strip()
         href_lower = href.lower() if href else ""
 
-        if re.search(r'\(?\d{2}\)?\s*9?\s*\d{4,5}[-\s\.]?\d{4}', texto):
+        # Regex flexibilizado para capturar telefones com pontos (ex: (48) 9.9908-7359)
+        if re.search(r'\(?\d{2}\)?\s*9?[\s\.]?\d{4,5}[-\s\.]?\d{4}', texto):
             return True
+
         if any(dom in href_lower for dom in self.DOMINIOS_BLOQUEADOS):
             return True
         if any(ign in href_lower for ign in self.URL_PALAVRAS_BLOQUEADAS):
@@ -96,72 +96,25 @@ class Chip7Mapper:
             pass
         return "FACE ID 3.0"
 
-    def mapear_curso(self, driver=None):
-        if driver:
-            self.driver = driver
-
-        self.expandir_modulos()
-        time.sleep(2)
-
-        nome_modulo = self.extrair_nome_modulo()
-
+    def _mapear_aulas_planas(self):
+        """Mapeamento secundário ignorando rodapés e elementos de suporte."""
         js_script = """
-        return (function() {
-            let items = [];
-            let rawElements = document.querySelectorAll('aside *, .sidebar *, [class*="sidebar"] *, [class*="menu"] *, [class*="playlist"] *, [class*="aula"] *, [class*="lesson"] *, a, li, p, span, div');
-            let widthThreshold = window.innerWidth * 0.38;
-
-            rawElements.forEach(el => {
-                let rect = el.getBoundingClientRect();
-                if (rect.width === 0 || rect.height === 0 || rect.top < 130 || rect.left > widthThreshold) {
-                    return;
-                }
-
-                let children = Array.from(el.children);
-                let temFilhoComTexto = children.some(c => {
-                    let r = c.getBoundingClientRect();
-                    let t = c.innerText ? c.innerText.trim() : '';
-                    return r.width > 0 && r.height > 0 && t.length > 0 && 
-                           ['DIV', 'A', 'LI', 'UL', 'P', 'H1', 'H2', 'H3', 'H4', 'H5', 'SECTION', 'NAV'].includes(c.tagName);
-                });
-
-                if (temFilhoComTexto) return;
-
-                let txt = el.innerText ? el.innerText.trim() : '';
-                if (!txt) return;
-
-                txt = txt.replace(/\\s+/g, ' ');
-
-                if (txt.length >= 3 && txt.length <= 120) {
-                    let href = el.getAttribute('href') || (el.tagName === 'A' ? el.href : '');
-                    items.push({
-                        text: txt,
-                        href: href || '',
-                        tag: el.tagName
-                    });
-                }
-            });
-            return items;
-        })();
+        return Array.from(document.querySelectorAll('a, li, span, div[class*="aula"], div[class*="lesson"]'))
+            .filter(el => !el.closest('footer, .footer, #footer, .suporte, #suporte, .whatsapp'))
+            .map(el => ({
+                text: el.innerText ? el.innerText.trim() : '',
+                href: el.getAttribute('href') || ''
+            }));
         """
-
-        candidatos_js = self.driver.execute_script(js_script) or []
-
+        itens = self.driver.execute_script(js_script) or []
         aulas = []
         vistos = set()
 
-        for cand in candidatos_js:
-            txt = self.limpar_nome(cand["text"])
-            href = cand["href"]
+        for item in itens:
+            txt = self.limpar_nome(item.get("text", ""))
+            href = item.get("href", "")
 
-            if len(txt) < 3 or len(txt) > 150:
-                continue
-
-            if self.eh_termo_invalido(txt, href):
-                continue
-
-            txt_upper = txt.upper()
-            if txt_upper == nome_modulo.upper():
+            if len(txt) < 3 or len(txt) > 150 or self.eh_termo_invalido(txt, href):
                 continue
 
             if txt not in vistos:
@@ -170,11 +123,89 @@ class Chip7Mapper:
                     "num_aula": len(aulas) + 1,
                     "titulo": txt,
                     "url": href if href and not href.endswith("#") and "javascript:" not in href else "",
-                    "texto_original": cand["text"]
+                    "texto_original": item.get("text", "")
+                })
+        return aulas
+
+    def mapear_curso(self, driver=None):
+        if driver:
+            self.driver = driver
+
+        self.expandir_modulos()
+        time.sleep(2)
+
+        nome_curso = self.extrair_nome_modulo()
+
+        js_script = """
+        return (function() {
+            let modulos = [];
+            let accordions = document.querySelectorAll('.card, .accordion-item, .modulo, [class*="modulo"]');
+            
+            if (accordions.length === 0) {
+                return [{ titulo: "", itens: [] }];
+            }
+
+            accordions.forEach((acc, idx) => {
+                let header = acc.querySelector('.card-header, .accordion-header, h2, h3, h4, .title');
+                let tituloMod = header ? header.innerText.trim() : `Módulo ${idx + 1}`;
+                let links = Array.from(acc.querySelectorAll('a, li, span'))
+                    .filter(el => !el.closest('footer, .footer, #footer, .suporte, #suporte, .whatsapp'))
+                    .map(el => ({
+                        text: el.innerText ? el.innerText.trim() : '',
+                        href: el.getAttribute('href') || ''
+                    }));
+                modulos.push({ titulo: tituloMod, itens: links });
+            });
+            return modulos;
+        })();
+        """
+
+        dados_modulos = self.driver.execute_script(js_script) or []
+        
+        estrutura_final = []
+        num_mod = 1
+
+        for mod in dados_modulos:
+            titulo_mod_limpo = self.limpar_nome(mod.get("titulo", ""))
+            if not titulo_mod_limpo or self.eh_termo_invalido(titulo_mod_limpo):
+                titulo_mod_limpo = f"Módulo {num_mod}"
+
+            aulas = []
+            vistos = set()
+
+            for item in mod.get("itens", []):
+                txt = self.limpar_nome(item.get("text", ""))
+                href = item.get("href", "")
+
+                if len(txt) < 3 or len(txt) > 150 or self.eh_termo_invalido(txt, href):
+                    continue
+
+                if txt not in vistos and txt.upper() != titulo_mod_limpo.upper():
+                    vistos.add(txt)
+                    aulas.append({
+                        "num_aula": len(aulas) + 1,
+                        "titulo": txt,
+                        "url": href if href and not href.endswith("#") and "javascript:" not in href else "",
+                        "texto_original": item.get("text", "")
+                    })
+
+            if aulas:
+                estrutura_final.append({
+                    "nome_curso": nome_curso,
+                    "num_mod": num_mod,
+                    "titulo_mod": titulo_mod_limpo,
+                    "aulas": aulas
+                })
+                num_mod += 1
+
+        if not estrutura_final:
+            aulas_gerais = self._mapear_aulas_planas()
+            if aulas_gerais:
+                estrutura_final.append({
+                    "nome_curso": nome_curso,
+                    "num_mod": 1,
+                    "titulo_mod": "MÉTODO CHIP",
+                    "aulas": aulas_gerais
                 })
 
-        return [{
-            "num_mod": 1,
-            "titulo_mod": nome_modulo,
-            "aulas": aulas
-        }]
+        return estrutura_final

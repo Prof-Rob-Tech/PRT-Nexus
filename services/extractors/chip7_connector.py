@@ -92,18 +92,23 @@ class Chip7Worker(QThread):
 
             # 3. Processamento de Pastas e Downloads
             for modulo in estrutura_curso:
+                nome_curso_limpo = mapper.limpar_nome(modulo.get("nome_curso", "FACE ID 3.0"))
                 titulo_mod_limpo = mapper.limpar_nome(modulo['titulo_mod'])
-                nome_pasta_modulo = f"{modulo['num_mod']:02d} - {titulo_mod_limpo}"
-                caminho_pasta_modulo = os.path.join(self.destino, nome_pasta_modulo)
-                os.makedirs(caminho_pasta_modulo, exist_ok=True)
 
+                # Ex: PRT_Nexus/01 - FACE ID 3.0/01 - MÉTODO CHIP
+                pasta_curso = os.path.join(self.destino, f"01 - {nome_curso_limpo}")
+                nome_pasta_modulo = f"{modulo['num_mod']:02d} - {titulo_mod_limpo}"
+                caminho_pasta_modulo = os.path.join(pasta_curso, nome_pasta_modulo)
+                
+                os.makedirs(caminho_pasta_modulo, exist_ok=True)
+                
                 for aula in modulo["aulas"]:
                     aulas_processadas += 1
                     id_tabela = f"{aulas_processadas}"
-                    
+                        
                     titulo_aula_limpo = mapper.limpar_nome(aula['titulo'])
                     nome_base_arquivo = f"{aula['num_aula']:02d} - {titulo_aula_limpo}"
-                    
+                        
                     # Usa extensão dinâmica para evitar nomes como 'video.mp4.mp4'
                     caminho_template_ytdlp = os.path.join(caminho_pasta_modulo, f"{nome_base_arquivo}.%(ext)s")
                     caminho_esperado_mp4 = os.path.join(caminho_pasta_modulo, f"{nome_base_arquivo}.mp4")
