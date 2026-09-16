@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QComboBox, QPushButton, QMessageBox, QTableWidget, QTableWidgetItem, QProgressBar, 
     QHeaderView, QFileDialog
 )
-from services.extractors.chip7_mapper import Chip7Worker
+from services.extractors.chip7_connector import Chip7Worker
 
 
 class Chip7View(QWidget):

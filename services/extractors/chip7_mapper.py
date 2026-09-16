@@ -1,20 +1,9 @@
-import os
 import re
 import time
-from PySide6.QtCore import QThread, Signal
-from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-
-try:
-    import yt_dlp
-except ImportError:
-    yt_dlp = None
 
 
 class Chip7Mapper:
-    # Bloqueio por trechos contidos na frase
     TRECHOS_BLOQUEADOS = [
         "SE ESPECIALIZE", "TREINAMENTOS", "WHATSAPP", "INSTAGRAM", "YOUTUBE",
         "FACEBOOK", "TELEGRAM", "TIKTOK", "CARRINHO", "MINHA CONTA",
@@ -22,10 +11,9 @@ class Chip7Mapper:
         "ATENDIMENTO", "POLÍTICA DE PRIVACIDADE", "TERMOS DE USO",
         "TODOS OS DIREITOS", "DIREITOS RESERVADOS", "LOGOUT", "SAIR",
         "BEM VINDO", "BEM-VINDO", "CURSOS EAD", "CURSOS PRESENCIAIS",
-        "MEUS CERTIFICADOS", "DÚVIDAS", "DUVIDAS", "MEU PERFIL"
+        "MEUS CERTIFICADOS", "DÚVIDAS", "DUVIDAS", "MEU PERFIL", "CONCLUÍDO", "CONCLUIDO"
     ]
 
-    # Nomes exatos de seções/categorias do menu que não são aulas
     SECOES_CATEGORIAS = [
         "MÉTODO CHIP", "METODO CHIP", "BÔNUS FACE ID", "BONUS FACE ID",
         "FACE ID 3.0"
@@ -45,11 +33,18 @@ class Chip7Mapper:
     def __init__(self, driver=None):
         self.driver = driver
 
-    def limpar_nome(self, texto):
+    @staticmethod
+    def limpar_nome(texto):
         if not texto:
             return ""
+        # Remove extensão .mp4 se houver
         texto = re.sub(r'\.mp4$', '', texto, flags=re.IGNORECASE)
-        texto = re.sub(r'[\\/*?:"<>|]', "", texto)
+        # Remove marcas de duração (ex: 10:15 ou 01:23:45) e status da interface
+        texto = re.sub(r'\b\d{1,2}:\d{2}(?::\d{2})?\b', '', texto)
+        texto = re.sub(r'\b(Concluído|Concluido|Assistido|Pendente)\b', '', texto, flags=re.IGNORECASE)
+        # Remove caracteres proibidos em caminhos do sistema operacional
+        texto = re.sub(r'[\\/*?:"<>|]', '', texto)
+        # Normaliza múltiplos espaços
         return re.sub(r'\s+', ' ', texto).strip()
 
     def eh_termo_invalido(self, texto, href=""):
@@ -58,28 +53,20 @@ class Chip7Mapper:
         txt_upper = texto.upper().strip()
         href_lower = href.lower() if href else ""
 
-        # 1. Filtro de telefone
         if re.search(r'\(?\d{2}\)?\s*9?\s*\d{4,5}[-\s\.]?\d{4}', texto):
             return True
-
-        # 2. URLs de suporte/redes
         if any(dom in href_lower for dom in self.DOMINIOS_BLOQUEADOS):
             return True
         if any(ign in href_lower for ign in self.URL_PALAVRAS_BLOQUEADAS):
             return True
-
-        # 3. Bloqueio por trechos parciais (ex: "Se especialize com nossos...")
         if any(trecho in txt_upper for trecho in self.TRECHOS_BLOQUEADOS):
             return True
-
-        # 4. Bloqueio de títulos exatos de seções/categorias
         if txt_upper in self.SECOES_CATEGORIAS:
             return True
 
         return False
 
     def expandir_modulos(self):
-        """Abre sanfonas/módulos para revelar as aulas antes de mapear."""
         try:
             botoes = self.driver.find_elements(
                 By.XPATH, 
@@ -118,22 +105,18 @@ class Chip7Mapper:
 
         nome_modulo = self.extrair_nome_modulo()
 
-        # Script JS restrito exclusivamente à barra lateral esquerda e abaixo do cabeçalho
         js_script = """
         return (function() {
             let items = [];
             let rawElements = document.querySelectorAll('aside *, .sidebar *, [class*="sidebar"] *, [class*="menu"] *, [class*="playlist"] *, [class*="aula"] *, [class*="lesson"] *, a, li, p, span, div');
-            let widthThreshold = window.innerWidth * 0.38; // Restringe à coluna esquerda (menu lateral)
+            let widthThreshold = window.innerWidth * 0.38;
 
             rawElements.forEach(el => {
                 let rect = el.getBoundingClientRect();
-                
-                // Descarte por posição: ignora o cabeçalho superior (top < 130) e fora da coluna esquerda
                 if (rect.width === 0 || rect.height === 0 || rect.top < 130 || rect.left > widthThreshold) {
                     return;
                 }
 
-                // Evita containers grandes que possuem filhos com texto
                 let children = Array.from(el.children);
                 let temFilhoComTexto = children.some(c => {
                     let r = c.getBoundingClientRect();
@@ -195,218 +178,3 @@ class Chip7Mapper:
             "titulo_mod": nome_modulo,
             "aulas": aulas
         }]
-
-
-class Chip7Worker(QThread):
-    progresso = Signal(str, int)
-    item_progresso = Signal(str, int)
-    item_concluido = Signal(dict)
-    concluido = Signal(bool, str)
-
-    def __init__(self, url, email, senha, destino, modo_avulso=False, parent=None):
-        super().__init__(parent)
-        self.url = url
-        self.email = email
-        self.senha = senha
-        self.destino = destino
-        self.modo_avulso = modo_avulso
-
-    def run(self):
-        driver = None
-        try:
-            os.makedirs(self.destino, exist_ok=True)
-
-            self.progresso.emit("A iniciar o Google Chrome...", 5)
-            
-            options = webdriver.ChromeOptions()
-            options.add_argument("--start-maximized")
-            driver = webdriver.Chrome(options=options)
-            
-            self.progresso.emit("A aceder ao Chip 7...", 10)
-            driver.get(self.url)
-            
-            self.progresso.emit("A abrir painel de login...", 15)
-            try:
-                btn_entrar_menu = WebDriverWait(driver, 8).until(
-                    EC.element_to_be_clickable((By.XPATH, "//*[contains(translate(text(), 'entrar', 'ENTRAR'), 'ENTRAR')]"))
-                )
-                btn_entrar_menu.click()
-                time.sleep(2)
-            except Exception:
-                pass
-
-            self.progresso.emit("A preencher dados de login...", 20)
-            try:
-                email_input = WebDriverWait(driver, 8).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "input[type='email'], input[name='email']"))
-                )
-                email_input.clear()
-                email_input.send_keys(self.email)
-                
-                senha_input = driver.find_element(By.CSS_SELECTOR, "input[type='password'], input[name='password']")
-                senha_input.clear()
-                senha_input.send_keys(self.senha)
-                time.sleep(1)
-                
-                btn_login = driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
-                btn_login.click()
-                
-                self.progresso.emit("Aguardando autenticação...", 30)
-                time.sleep(8)
-            except Exception:
-                pass
-
-            self.progresso.emit("A carregar a página do curso...", 35)
-            driver.get(self.url)
-            time.sleep(8)
-
-            self.progresso.emit("A identificar módulo e mapear aulas...", 40)
-            
-            mapper = Chip7Mapper(driver)
-            estrutura_curso = mapper.mapear_curso()
-
-            total_aulas = sum(len(m["aulas"]) for m in estrutura_curso)
-            aulas_processadas = 0
-
-            if total_aulas == 0:
-                self.concluido.emit(False, "Nenhuma aula válida foi encontrada no menu. Verifique o link informado.")
-                return
-
-            for modulo in estrutura_curso:
-                nome_pasta_modulo = f"{modulo['num_mod']:02d} - {modulo['titulo_mod']}"
-                caminho_pasta_modulo = os.path.join(self.destino, nome_pasta_modulo)
-                os.makedirs(caminho_pasta_modulo, exist_ok=True)
-
-                for aula in modulo["aulas"]:
-                    aulas_processadas += 1
-                    id_tabela = f"{aulas_processadas}"
-                    
-                    nome_arquivo_video = f"{aula['num_aula']:02d} - {aula['titulo']}.mp4"
-                    caminho_arquivo = os.path.join(caminho_pasta_modulo, nome_arquivo_video)
-
-                    self.item_concluido.emit({
-                        "num": id_tabela,
-                        "titulo": aula['titulo'],
-                        "caminho": caminho_arquivo,
-                        "status": "A localizar vídeo..."
-                    })
-
-                    try:
-                        if aula["url"] and aula["url"] != driver.current_url:
-                            driver.get(aula["url"])
-                            time.sleep(4)
-                        elif aula["texto_original"]:
-                            texto_busca = re.sub(r'[\'"]', '', aula['texto_original']).strip()
-                            if len(texto_busca) > 15:
-                                texto_busca = texto_busca[:15]
-
-                            alvo = None
-                            try:
-                                elementos_pagina = driver.find_elements(
-                                    By.XPATH, 
-                                    f"//*[contains(translate(text(), 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'), '{texto_busca.upper()}')]"
-                                )
-                                for el in elementos_pagina:
-                                    if el.is_displayed() and el.location['x'] < 400 and el.location['y'] > 130:
-                                        alvo = el
-                                        break
-                            except Exception:
-                                pass
-
-                            if alvo:
-                                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", alvo)
-                                time.sleep(0.5)
-                                driver.execute_script("arguments[0].click();", alvo)
-                                time.sleep(4)
-                    except Exception:
-                        pass
-
-                    video_url = None
-                    time.sleep(2)
-                    
-                    iframes = driver.find_elements(By.TAG_NAME, "iframe")
-                    for iframe in iframes:
-                        src = iframe.get_attribute("src") or iframe.get_attribute("data-src") or ""
-                        if any(p in src for p in ["vimeo", "youtube", "panda", "wistia", "player", "embed", "converteai"]):
-                            video_url = src
-                            break
-
-                    if not video_url:
-                        videos = driver.find_elements(By.TAG_NAME, "video")
-                        for v in videos:
-                            src = v.get_attribute("src")
-                            if src:
-                                video_url = src
-                                break
-
-                    if not video_url:
-                        self.item_progresso.emit(id_tabela, 100)
-                        self.item_concluido.emit({
-                            "num": id_tabela,
-                            "titulo": aula['titulo'],
-                            "caminho": "-",
-                            "status": "Ignorado (Sem vídeo)"
-                        })
-                        continue
-
-                    ultima_atualizacao = [0]
-
-                    def hook_download(d):
-                        if d['status'] == 'downloading':
-                            percent_str = d.get('_percent_str', '0.0%')
-                            percent_limpo = re.sub(r'\x1b\[[0-9;]*m', '', percent_str).strip()
-                            
-                            try:
-                                pct_int = int(float(percent_limpo.replace('%', '').strip()))
-                            except ValueError:
-                                pct_int = 0
-
-                            agora = time.time()
-                            if agora - ultima_atualizacao[0] > 0.2:
-                                ultima_atualizacao[0] = agora
-                                self.item_progresso.emit(id_tabela, pct_int)
-                                base_pct = int(((aulas_processadas - 1) / total_aulas) * 100)
-                                atual_pct = int(base_pct + (pct_int / total_aulas))
-                                self.progresso.emit(
-                                    f"A descarregar ({aulas_processadas}/{total_aulas}): {aula['titulo']} - {percent_limpo}", 
-                                    min(atual_pct, 99)
-                                )
-
-                        elif d['status'] == 'finished':
-                            self.item_progresso.emit(id_tabela, 100)
-
-                    if yt_dlp:
-                        ydl_opts = {
-                            'outtmpl': caminho_arquivo,
-                            'format': 'best[ext=mp4]/b/bestvideo+bestaudio/best',
-                            'merge_output_format': 'mp4',
-                            'quiet': True,
-                            'no_warnings': True,
-                            'http_headers': {
-                                'Referer': driver.current_url
-                            },
-                            'progress_hooks': [hook_download]
-                        }
-                        
-                        try:
-                            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                                ydl.download([video_url])
-                        except Exception as err:
-                            print(f"Erro no download yt_dlp: {err}")
-
-                    self.item_progresso.emit(id_tabela, 100)
-                    self.item_concluido.emit({
-                        "num": id_tabela,
-                        "titulo": aula['titulo'],
-                        "caminho": caminho_arquivo,
-                        "status": "Concluído"
-                    })
-
-            self.progresso.emit("Processo concluído!", 100)
-            self.concluido.emit(True, "Processo concluído com sucesso!")
-
-        except Exception as e:
-            self.concluido.emit(False, f"Erro no motor do Chip 7: {str(e)}")
-        finally:
-            if driver:
-                driver.quit()
