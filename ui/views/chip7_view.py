@@ -49,11 +49,9 @@ class Chip7View(QWidget):
                 color: #ffffff;
                 padding: 6px 10px;
                 font-size: 12px;
-                /* Remove a seleção azul padrão do texto */
                 selection-background-color: #3a3a3a;
                 selection-color: #ffffff;
             }
-            /* Foco discreto em cinza médio (sem linha azul) */
             QLineEdit:focus, QComboBox:focus {
                 border: 1px solid #555555;
             }
@@ -130,7 +128,7 @@ class Chip7View(QWidget):
         ly_qual.addWidget(self.cmb_qualidade, stretch=1)
         ly_captura.addLayout(ly_qual)
 
-        # Botões de Ação com Cantos Arredondados
+        # Botões de Ação
         ly_btns = QHBoxLayout()
         self.btn_avulso = QPushButton("⚡ Baixar Mídia Avulsa")
         self.btn_avulso.setStyleSheet("background-color: #0066cc; color: white; font-weight: bold; padding: 8px; border-radius: 8px; border: none;")
@@ -210,6 +208,8 @@ class Chip7View(QWidget):
 
         # ================= BARRA DE PROGRESSO GERAL =================
         ly_prog_geral = QHBoxLayout()
+        
+        # Caixinha 1 (Esquerda): Status da Aula
         self.lbl_status_global = QLabel("Aguardando link de download...")
         self.lbl_status_global.setStyleSheet("""
             background-color: #1e1e1e;
@@ -219,7 +219,20 @@ class Chip7View(QWidget):
             font-size: 11px;
             padding: 5px 10px;
         """)
-        
+
+        # Caixinha 2 (Meio): Velocidade e ETA
+        self.lbl_velocidade = QLabel("-- MiB/s | ETA: --:--")
+        self.lbl_velocidade.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_velocidade.setStyleSheet("""
+            background-color: #1e1e1e;
+            border: 1px solid #3a3a3a;
+            border-radius: 8px;
+            color: #aaaaaa;
+            font-size: 11px;
+            padding: 5px 10px;
+        """)
+
+        # Caixinha 3 (Direita): Barra de Progresso
         self.pbar_global = QProgressBar()
         self.pbar_global.setRange(0, 100)
         self.pbar_global.setValue(0)
@@ -240,8 +253,9 @@ class Chip7View(QWidget):
             }
         """)
 
-        ly_prog_geral.addWidget(self.lbl_status_global, stretch=1)
-        ly_prog_geral.addWidget(self.pbar_global, stretch=2)
+        ly_prog_geral.addWidget(self.lbl_status_global, stretch=2)
+        ly_prog_geral.addWidget(self.lbl_velocidade, stretch=1)
+        ly_prog_geral.addWidget(self.pbar_global, stretch=1)
         layout_principal.addLayout(ly_prog_geral)
 
         # ================= TABELA DE MÍDIAS =================
@@ -258,7 +272,6 @@ class Chip7View(QWidget):
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
         
-        # Largura enxuta para a 1ª coluna (#) e largura expandida para Status (220px)
         self.tabela.setColumnWidth(0, 45)
         self.tabela.setColumnWidth(3, 220)
 
@@ -321,6 +334,7 @@ class Chip7View(QWidget):
 
         self.worker = Chip7Worker(url, email, senha, destino, modo_avulso=modo_avulso)
         self.worker.progresso.connect(self._on_progresso)
+        self.worker.velocidade.connect(self._on_velocidade)
         self.worker.item_progresso.connect(self._on_item_progresso)
         self.worker.item_concluido.connect(self._on_item_concluido)
         self.worker.concluido.connect(self._on_concluido)
@@ -329,6 +343,9 @@ class Chip7View(QWidget):
     def _on_progresso(self, msg, pct):
         self.pbar_global.setValue(pct)
         self.lbl_status_global.setText(msg)
+
+    def _on_velocidade(self, texto):
+        self.lbl_velocidade.setText(texto)
 
     def _criar_barra_status(self):
         pbar = QProgressBar()
