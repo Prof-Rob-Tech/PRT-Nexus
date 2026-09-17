@@ -266,14 +266,21 @@ class Chip7View(QWidget):
         self.tabela = QTableWidget(0, 4)
         self.tabela.setHorizontalHeaderLabels(["#", "Título / Nome do Arquivo", "Caminho Salvo", "Status"])
         
+        # Impede o surgimento de barra de rolagem horizontal que esconde colunas
+        self.tabela.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
         header = self.tabela.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)        # # (Fixo)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)  # Título (Arrastável)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)  # Caminho (Arrastável)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)  # Status (Arrastável)
         
+        header.setStretchLastSection(True)  # Trava o Status na borda direita preenchendo todo o espaço
+        header.setMinimumSectionSize(60)    # Impede esmagar as colunas
+
         self.tabela.setColumnWidth(0, 45)
-        self.tabela.setColumnWidth(3, 220)
+        self.tabela.setColumnWidth(1, 300)
+        self.tabela.setColumnWidth(2, 400)
 
         self._configurar_estilo_tabela(self.tabela)
         ly_tab.addWidget(self.tabela)
