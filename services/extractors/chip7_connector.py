@@ -20,6 +20,7 @@ except ImportError:
 
 class Chip7Worker(QThread):
     progresso = Signal(str, int)
+    velocidade = Signal(str)
     item_progresso = Signal(str, int)
     item_concluido = Signal(dict)
     concluido = Signal(bool, str)
@@ -218,7 +219,14 @@ class Chip7Worker(QThread):
                         if d['status'] == 'downloading':
                             percent_str = d.get('_percent_str', '0.0%')
                             percent_limpo = re.sub(r'\x1b\[[0-9;]*m', '', percent_str).strip()
-                            
+
+                            speed_raw = d.get('_speed_str', '0 MiB/s')
+                            eta_raw = d.get('_eta_str', '--:--')
+                            speed_limpo = re.sub(r'\x1b\[[0-9;]*m', '', speed_raw).strip()
+                            eta_limpo = re.sub(r'\x1b\[[0-9;]*m', '', eta_raw).strip()
+
+                            texto_velocidade = f"{speed_limpo} | ETA: {eta_limpo}"
+
                             try:
                                 pct_int = int(float(percent_limpo.replace('%', '').strip()))
                             except ValueError:
@@ -230,13 +238,14 @@ class Chip7Worker(QThread):
                                 self.item_progresso.emit(id_tabela, pct_int)
                                 base_pct = int(((aulas_processadas - 1) / total_aulas) * 100)
                                 atual_pct = int(base_pct + (pct_int / total_aulas))
+
                                 self.progresso.emit(
-                                    f"A descarregar ({aulas_processadas}/{total_aulas}): {titulo_aula_limpo[:25]} - {percent_limpo}", 
+                                    f"A descarregar ({aulas_processadas}/{total_aulas}): {titulo_aula_limpo[:25]} - {percent_limpo}",
                                     min(atual_pct, 99)
                                 )
 
-                        elif d['status'] == 'finished':
-                            self.item_progresso.emit(id_tabela, 100)
+                                if hasattr(self, 'velocidade'):
+                                    self.velocidade.emit(texto_velocidade)
 
                     if yt_dlp:
                         ydl_opts = {
