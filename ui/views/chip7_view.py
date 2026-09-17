@@ -1,10 +1,11 @@
 import os
 import re
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QGroupBox, QLineEdit, 
     QComboBox, QPushButton, QMessageBox, QTableWidget, QTableWidgetItem, QProgressBar, 
-    QHeaderView, QFileDialog
+    QHeaderView, QFileDialog, QCheckBox
 )
 from services.extractors.chip7_connector import Chip7Worker
 
@@ -20,7 +21,7 @@ class Chip7View(QWidget):
         self._conectar_acoes()
 
     def _aplicar_estilos(self):
-        """Aplica o CSS neutro com cantos arredondados, foco suave e sem destaques excessivos."""
+        """Aplica estilo dark profissional com botões e campos padronizados."""
         self.setStyleSheet("""
             QGroupBox {
                 background-color: #252526;
@@ -55,10 +56,6 @@ class Chip7View(QWidget):
             QLineEdit:focus, QComboBox:focus {
                 border: 1px solid #555555;
             }
-            QLineEdit:read-only {
-                background-color: #181818;
-                color: #888888;
-            }
 
             QLabel.lbl-box {
                 background-color: #1e1e1e;
@@ -67,6 +64,23 @@ class Chip7View(QWidget):
                 color: #cccccc;
                 padding: 6px 10px;
                 font-size: 12px;
+            }
+
+            QCheckBox {
+                color: #cccccc;
+                font-size: 12px;
+                spacing: 8px;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+                border-radius: 4px;
+                border: 1px solid #444444;
+                background-color: #1e1e1e;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #0066cc;
+                border-color: #0066cc;
             }
 
             QPushButton#btn_alterar {
@@ -81,19 +95,28 @@ class Chip7View(QWidget):
                 background-color: #444444;
             }
 
-            /* Botão de Pausar / Retomar com visual neutro */
-            QPushButton#btn_pausar {
+            /* Botões de Ação na Barra de Progresso */
+            QPushButton#btn_pausar, QPushButton#btn_cancelar {
                 background-color: #2b2b2b;
                 color: #ffffff;
                 border: 1px solid #3a3a3a;
                 border-radius: 8px;
-                padding: 5px 14px;
+                padding: 5px 12px;
                 font-weight: bold;
                 font-size: 11px;
             }
             QPushButton#btn_pausar:hover {
                 background-color: #3a3a3a;
                 border-color: #555555;
+            }
+            QPushButton#btn_cancelar:hover {
+                background-color: #8b0000;
+                border-color: #a00000;
+            }
+            QPushButton#btn_pausar:disabled, QPushButton#btn_cancelar:disabled {
+                background-color: #1a1a1a;
+                color: #555555;
+                border-color: #2a2a2a;
             }
 
             QPushButton#btn_limpar {
@@ -143,7 +166,6 @@ class Chip7View(QWidget):
         self.txt_url.setPlaceholderText("Cole o link do vídeo, aula ou curso aqui...")
         ly_captura.addWidget(self.txt_url)
 
-        # Seleção de Qualidade
         ly_qual = QHBoxLayout()
         lbl_qual = QLabel("Qualidade:")
         lbl_qual.setProperty("class", "lbl-box")
@@ -158,7 +180,6 @@ class Chip7View(QWidget):
         ly_qual.addWidget(self.cmb_qualidade, stretch=1)
         ly_captura.addLayout(ly_qual)
 
-        # Botões de Ação
         ly_btns = QHBoxLayout()
         self.btn_avulso = QPushButton("⚡ Baixar Mídia Avulsa")
         self.btn_avulso.setStyleSheet("background-color: #0066cc; color: white; font-weight: bold; padding: 8px; border-radius: 8px; border: none;")
@@ -172,17 +193,17 @@ class Chip7View(QWidget):
 
         ly_esq.addWidget(gb_captura)
 
-        # 2. Autenticação
+        # 2. Autenticação (Ajustado)
         gb_auth = QGroupBox("🔐 Autenticação (Áreas Pagas / Privadas)")
         form_auth = QFormLayout(gb_auth)
         form_auth.setContentsMargins(10, 12, 10, 10)
         form_auth.setSpacing(8)
 
         self.txt_email = QLineEdit()
-        self.txt_email.setPlaceholderText("E-mail / Usuário")
+        self.txt_email.setPlaceholderText("digite seu e-mail do Chip 7")
         self.txt_senha = QLineEdit()
         self.txt_senha.setEchoMode(QLineEdit.EchoMode.Password)
-        self.txt_senha.setPlaceholderText("Senha")
+        self.txt_senha.setPlaceholderText("digite sua senha")
 
         lbl_email = QLabel("E-mail / Usuário")
         lbl_email.setProperty("class", "lbl-box")
@@ -209,6 +230,10 @@ class Chip7View(QWidget):
         layout_top.addLayout(ly_esq, stretch=1)
 
         # ================= COLUNA DIREITA =================
+        ly_dir = QVBoxLayout()
+        ly_dir.setSpacing(10)
+
+        # Organização de Pastas
         gb_org = QGroupBox("📁 Organização de Pastas (Curso / Playlist)")
         form_org = QFormLayout(gb_org)
         form_org.setContentsMargins(10, 12, 10, 10)
@@ -238,11 +263,29 @@ class Chip7View(QWidget):
         form_org.addRow(lbl_est, self.cmb_estrutura)
         form_org.addRow(lbl_mid, self.cmb_midias)
 
-        layout_top.addWidget(gb_org, stretch=1)
+        ly_dir.addWidget(gb_org)
 
+        # Opções Adicionais
+        gb_opcoes = QGroupBox("⚙️ Opções Extras de Extração")
+        ly_opcoes = QVBoxLayout(gb_opcoes)
+        ly_opcoes.setContentsMargins(12, 14, 12, 12)
+        ly_opcoes.setSpacing(10)
+
+        self.chk_anexos = QCheckBox("Baixar materiais anexos das aulas (PDFs, ZIPs, Apostilas)")
+        self.chk_anexos.setChecked(True)
+        self.chk_txt = QCheckBox("Gerar arquivo .txt com índice e descrição das aulas")
+        self.chk_notif = QCheckBox("Notificar com som ao concluir todos os downloads")
+
+        ly_opcoes.addWidget(self.chk_anexos)
+        ly_opcoes.addWidget(self.chk_txt)
+        ly_opcoes.addWidget(self.chk_notif)
+
+        ly_dir.addWidget(gb_opcoes)
+
+        layout_top.addLayout(ly_dir, stretch=1)
         layout_principal.addLayout(layout_top)
 
-        # ================= BARRA DE PROGRESSO GERAL & BOTÕES =================
+        # ================= BARRA DE PROGRESSO GERAL & CONTROLES =================
         ly_prog_geral = QHBoxLayout()
         
         self.lbl_status_global = QLabel("Aguardando link de download...")
@@ -286,19 +329,25 @@ class Chip7View(QWidget):
             }
         """)
 
-        # Botão Pausar Neutro
+        # Botões Pausar e Cancelar (Iniciam Desativados)
         self.btn_pausar = QPushButton("⏸️ Pausar")
         self.btn_pausar.setObjectName("btn_pausar")
+        self.btn_pausar.setEnabled(False)
+
+        self.btn_cancelar = QPushButton("⏹️ Cancelar")
+        self.btn_cancelar.setObjectName("btn_cancelar")
+        self.btn_cancelar.setEnabled(False)
 
         ly_prog_geral.addWidget(self.lbl_status_global, stretch=2)
         ly_prog_geral.addWidget(self.lbl_velocidade, stretch=1)
         ly_prog_geral.addWidget(self.pbar_global, stretch=1)
         ly_prog_geral.addWidget(self.btn_pausar)
+        ly_prog_geral.addWidget(self.btn_cancelar)
 
         layout_principal.addLayout(ly_prog_geral)
 
         # ================= TABELA DE MÍDIAS =================
-        gb_tabela = QGroupBox("📦 Mídias Concluídas do Chip 7")
+        gb_tabela = QGroupBox("📦 Mídias Concluídas do Chip 7 (Duplo clique para abrir a pasta)")
         ly_tab = QVBoxLayout(gb_tabela)
         ly_tab.setContentsMargins(10, 12, 10, 10)
 
@@ -313,7 +362,6 @@ class Chip7View(QWidget):
         self.tabela = QTableWidget(0, 4)
         self.tabela.verticalHeader().setVisible(False)
         self.tabela.setHorizontalHeaderLabels(["#", "Título / Nome do Arquivo", "Caminho Salvo", "Status"])
-        
         self.tabela.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         header = self.tabela.horizontalHeader()
@@ -321,9 +369,7 @@ class Chip7View(QWidget):
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
-        
         header.setStretchLastSection(True)
-        header.setMinimumSectionSize(60)
 
         self.tabela.setColumnWidth(0, 45)
         self.tabela.setColumnWidth(1, 300)
@@ -365,12 +411,24 @@ class Chip7View(QWidget):
         self.btn_curso.clicked.connect(lambda: self._iniciar_download(modo_avulso=False))
         self.btn_alterar_dest.clicked.connect(self._selecionar_pasta_destino)
         self.btn_pausar.clicked.connect(self._toggle_pausar_resumir)
+        self.btn_cancelar.clicked.connect(self._cancelar_download)
         self.btn_limpar.clicked.connect(self._limpar_concluidos)
+        self.tabela.itemDoubleClicked.connect(self._abrir_item_tabela)
 
     def _selecionar_pasta_destino(self):
         pasta = QFileDialog.getExistingDirectory(self, "Selecionar Pasta de Destino", self.txt_destino.text())
         if pasta:
             self.txt_destino.setText(pasta)
+
+    def _abrir_item_tabela(self, item):
+        row = item.row()
+        caminho_item = self.tabela.item(row, 2)
+        if caminho_item and caminho_item.text():
+            caminho = caminho_item.text()
+            if os.path.exists(caminho):
+                if os.path.isfile(caminho):
+                    caminho = os.path.dirname(caminho)
+                QDesktopServices.openUrl(QUrl.fromLocalFile(caminho))
 
     def _toggle_pausar_resumir(self):
         if not self.worker or not self.worker.isRunning():
@@ -384,6 +442,20 @@ class Chip7View(QWidget):
             self.btn_pausar.setText("⏸️ Pausar")
             if hasattr(self.worker, 'resumir'):
                 self.worker.resumir()
+
+    def _cancelar_download(self):
+        if self.worker and self.worker.isRunning():
+            self.worker.terminate()
+            self.worker.wait()
+            self.lbl_status_global.setText("Download cancelado pelo usuário.")
+            self.lbl_velocidade.setText("-- MiB/s | ETA: --:--")
+            self.pbar_global.setValue(0)
+
+            self.btn_avulso.setEnabled(True)
+            self.btn_curso.setEnabled(True)
+            self.btn_pausar.setEnabled(False)
+            self.btn_cancelar.setEnabled(False)
+            self.btn_pausar.setText("⏸️ Pausar")
 
     def _limpar_concluidos(self):
         for row in reversed(range(self.tabela.rowCount())):
@@ -403,6 +475,8 @@ class Chip7View(QWidget):
 
         self.btn_avulso.setEnabled(False)
         self.btn_curso.setEnabled(False)
+        self.btn_pausar.setEnabled(True)
+        self.btn_cancelar.setEnabled(True)
 
         self.btn_pausar.setText("⏸️ Pausar")
 
@@ -516,6 +590,8 @@ class Chip7View(QWidget):
     def _on_concluido(self, sucesso, mensagem):
         self.btn_avulso.setEnabled(True)
         self.btn_curso.setEnabled(True)
+        self.btn_pausar.setEnabled(False)
+        self.btn_cancelar.setEnabled(False)
 
         if sucesso:
             QMessageBox.information(self, "Chip 7", mensagem)
