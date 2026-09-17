@@ -212,13 +212,11 @@ class Chip7View(QWidget):
 
         layout_top.addWidget(gb_org, stretch=1)
 
-        # Conecta a linha superior de layouts ao layout principal
         layout_principal.addLayout(layout_top)
 
         # ================= BARRA DE PROGRESSO GERAL =================
         ly_prog_geral = QHBoxLayout()
         
-        # Caixinha 1 (Esquerda): Status da Aula
         self.lbl_status_global = QLabel("Aguardando link de download...")
         self.lbl_status_global.setStyleSheet("""
             background-color: #1e1e1e;
@@ -229,7 +227,6 @@ class Chip7View(QWidget):
             padding: 5px 10px;
         """)
 
-        # Caixinha 2 (Meio): Velocidade e ETA
         self.lbl_velocidade = QLabel("-- MiB/s | ETA: --:--")
         self.lbl_velocidade.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_velocidade.setStyleSheet("""
@@ -241,7 +238,6 @@ class Chip7View(QWidget):
             padding: 5px 10px;
         """)
 
-        # Caixinha 3 (Direita): Barra de Progresso
         self.pbar_global = QProgressBar()
         self.pbar_global.setRange(0, 100)
         self.pbar_global.setValue(0)
@@ -273,18 +269,19 @@ class Chip7View(QWidget):
         ly_tab.setContentsMargins(10, 12, 10, 10)
 
         self.tabela = QTableWidget(0, 4)
+        self.tabela.verticalHeader().setVisible(False)  # Remove a coluna duplicada (números à esquerda)
         self.tabela.setHorizontalHeaderLabels(["#", "Título / Nome do Arquivo", "Caminho Salvo", "Status"])
         
         self.tabela.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         header = self.tabela.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)        # # (Fixo)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)  # Título (Arrastável)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)  # Caminho (Arrastável)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)  # Status (Arrastável)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
         
-        header.setStretchLastSection(True)  # Trava o Status na borda direita preenchendo todo o espaço
-        header.setMinimumSectionSize(60)    # Impede esmagar as colunas
+        header.setStretchLastSection(True)
+        header.setMinimumSectionSize(60)
 
         self.tabela.setColumnWidth(0, 45)
         self.tabela.setColumnWidth(1, 300)
@@ -337,7 +334,6 @@ class Chip7View(QWidget):
         senha = self.txt_senha.text().strip()
         destino = self.txt_destino.text().strip()
         
-        # Opções de Organização
         nome_conteudo = self.txt_nome_conteudo.text().strip()
         estrutura = self.cmb_estrutura.currentText()
         midias = self.cmb_midias.currentText()
