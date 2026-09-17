@@ -188,22 +188,31 @@ class Chip7View(QWidget):
         lbl_nome_cnt.setProperty("class", "lbl-box")
         self.txt_nome_conteudo = QLineEdit("Chip 7 - Curso Extraído")
         
+        # Menu Suspenso: Estrutura
         lbl_est = QLabel("Estrutura")
         lbl_est.setProperty("class", "lbl-box")
-        self.txt_estrutura = QLineEdit("Organizado Automaticamente por Módulo")
-        self.txt_estrutura.setReadOnly(True)
+        self.cmb_estrutura = QComboBox()
+        self.cmb_estrutura.addItems([
+            "Organizado Automaticamente por Módulo",
+            "Todos os Vídeos na Mesma Pasta"
+        ])
 
+        # Menu Suspenso: Mídias
         lbl_mid = QLabel("Mídias")
         lbl_mid.setProperty("class", "lbl-box")
-        self.txt_midias = QLineEdit("Extração Sequencial de Vídeos")
-        self.txt_midias.setReadOnly(True)
+        self.cmb_midias = QComboBox()
+        self.cmb_midias.addItems([
+            "Extração Sequencial de Vídeos (01 -, 02 -)",
+            "Manter Nome Original do Vídeo"
+        ])
 
         form_org.addRow(lbl_nome_cnt, self.txt_nome_conteudo)
-        form_org.addRow(lbl_est, self.txt_estrutura)
-        form_org.addRow(lbl_mid, self.txt_midias)
+        form_org.addRow(lbl_est, self.cmb_estrutura)
+        form_org.addRow(lbl_mid, self.cmb_midias)
 
         layout_top.addWidget(gb_org, stretch=1)
 
+        # Conecta a linha superior de layouts ao layout principal
         layout_principal.addLayout(layout_top)
 
         # ================= BARRA DE PROGRESSO GERAL =================
@@ -266,7 +275,6 @@ class Chip7View(QWidget):
         self.tabela = QTableWidget(0, 4)
         self.tabela.setHorizontalHeaderLabels(["#", "Título / Nome do Arquivo", "Caminho Salvo", "Status"])
         
-        # Impede o surgimento de barra de rolagem horizontal que esconde colunas
         self.tabela.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         header = self.tabela.horizontalHeader()
@@ -328,6 +336,12 @@ class Chip7View(QWidget):
         email = self.txt_email.text().strip()
         senha = self.txt_senha.text().strip()
         destino = self.txt_destino.text().strip()
+        
+        # Opções de Organização
+        nome_conteudo = self.txt_nome_conteudo.text().strip()
+        estrutura = self.cmb_estrutura.currentText()
+        midias = self.cmb_midias.currentText()
+        qualidade = self.cmb_qualidade.currentText()
 
         if not url or not email or not senha:
             QMessageBox.warning(self, "Campos Vazios", "Preencha o Link, E-mail e Senha antes de iniciar!")
