@@ -20,7 +20,7 @@ class Chip7View(QWidget):
         self._conectar_acoes()
 
     def _aplicar_estilos(self):
-        """Aplica o CSS com cantos arredondados, foco suave e sem destaques azuis."""
+        """Aplica o CSS neutro com cantos arredondados, foco suave e sem destaques excessivos."""
         self.setStyleSheet("""
             QGroupBox {
                 background-color: #252526;
@@ -79,6 +79,36 @@ class Chip7View(QWidget):
             }
             QPushButton#btn_alterar:hover {
                 background-color: #444444;
+            }
+
+            /* Botão de Pausar / Retomar com visual neutro */
+            QPushButton#btn_pausar {
+                background-color: #2b2b2b;
+                color: #ffffff;
+                border: 1px solid #3a3a3a;
+                border-radius: 8px;
+                padding: 5px 14px;
+                font-weight: bold;
+                font-size: 11px;
+            }
+            QPushButton#btn_pausar:hover {
+                background-color: #3a3a3a;
+                border-color: #555555;
+            }
+
+            QPushButton#btn_limpar {
+                background-color: #2b2b2b;
+                color: #aaaaaa;
+                border: 1px solid #3a3a3a;
+                border-radius: 6px;
+                padding: 4px 10px;
+                font-size: 11px;
+                font-weight: bold;
+            }
+            QPushButton#btn_limpar:hover {
+                background-color: #c0392b;
+                color: #ffffff;
+                border-color: #e74c3c;
             }
         """)
 
@@ -188,7 +218,6 @@ class Chip7View(QWidget):
         lbl_nome_cnt.setProperty("class", "lbl-box")
         self.txt_nome_conteudo = QLineEdit("Chip 7 - Curso Extraído")
         
-        # Menu Suspenso: Estrutura
         lbl_est = QLabel("Estrutura")
         lbl_est.setProperty("class", "lbl-box")
         self.cmb_estrutura = QComboBox()
@@ -197,7 +226,6 @@ class Chip7View(QWidget):
             "Todos os Vídeos na Mesma Pasta"
         ])
 
-        # Menu Suspenso: Mídias
         lbl_mid = QLabel("Mídias")
         lbl_mid.setProperty("class", "lbl-box")
         self.cmb_midias = QComboBox()
@@ -214,7 +242,7 @@ class Chip7View(QWidget):
 
         layout_principal.addLayout(layout_top)
 
-        # ================= BARRA DE PROGRESSO GERAL =================
+        # ================= BARRA DE PROGRESSO GERAL & BOTÕES =================
         ly_prog_geral = QHBoxLayout()
         
         self.lbl_status_global = QLabel("Aguardando link de download...")
@@ -258,9 +286,15 @@ class Chip7View(QWidget):
             }
         """)
 
+        # Botão Pausar Neutro
+        self.btn_pausar = QPushButton("⏸️ Pausar")
+        self.btn_pausar.setObjectName("btn_pausar")
+
         ly_prog_geral.addWidget(self.lbl_status_global, stretch=2)
         ly_prog_geral.addWidget(self.lbl_velocidade, stretch=1)
         ly_prog_geral.addWidget(self.pbar_global, stretch=1)
+        ly_prog_geral.addWidget(self.btn_pausar)
+
         layout_principal.addLayout(ly_prog_geral)
 
         # ================= TABELA DE MÍDIAS =================
@@ -268,8 +302,16 @@ class Chip7View(QWidget):
         ly_tab = QVBoxLayout(gb_tabela)
         ly_tab.setContentsMargins(10, 12, 10, 10)
 
+        ly_tab_top = QHBoxLayout()
+        ly_tab_top.addStretch()
+        self.btn_limpar = QPushButton("🗑️ Limpar Concluídos")
+        self.btn_limpar.setObjectName("btn_limpar")
+        ly_tab_top.addWidget(self.btn_limpar)
+        
+        ly_tab.addLayout(ly_tab_top)
+
         self.tabela = QTableWidget(0, 4)
-        self.tabela.verticalHeader().setVisible(False)  # Remove a coluna duplicada (números à esquerda)
+        self.tabela.verticalHeader().setVisible(False)
         self.tabela.setHorizontalHeaderLabels(["#", "Título / Nome do Arquivo", "Caminho Salvo", "Status"])
         
         self.tabela.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -322,32 +364,47 @@ class Chip7View(QWidget):
         self.btn_avulso.clicked.connect(lambda: self._iniciar_download(modo_avulso=True))
         self.btn_curso.clicked.connect(lambda: self._iniciar_download(modo_avulso=False))
         self.btn_alterar_dest.clicked.connect(self._selecionar_pasta_destino)
+        self.btn_pausar.clicked.connect(self._toggle_pausar_resumir)
+        self.btn_limpar.clicked.connect(self._limpar_concluidos)
 
     def _selecionar_pasta_destino(self):
         pasta = QFileDialog.getExistingDirectory(self, "Selecionar Pasta de Destino", self.txt_destino.text())
         if pasta:
             self.txt_destino.setText(pasta)
 
+    def _toggle_pausar_resumir(self):
+        if not self.worker or not self.worker.isRunning():
+            return
+
+        if self.btn_pausar.text() == "⏸️ Pausar":
+            self.btn_pausar.setText("▶️ Retomar")
+            if hasattr(self.worker, 'pausar'):
+                self.worker.pausar()
+        else:
+            self.btn_pausar.setText("⏸️ Pausar")
+            if hasattr(self.worker, 'resumir'):
+                self.worker.resumir()
+
+    def _limpar_concluidos(self):
+        for row in reversed(range(self.tabela.rowCount())):
+            pbar = self.tabela.cellWidget(row, 3)
+            if isinstance(pbar, QProgressBar) and pbar.value() >= 100:
+                self.tabela.removeRow(row)
+
     def _iniciar_download(self, modo_avulso):
         url = self.txt_url.text().strip()
         email = self.txt_email.text().strip()
         senha = self.txt_senha.text().strip()
         destino = self.txt_destino.text().strip()
-        
-        nome_conteudo = self.txt_nome_conteudo.text().strip()
-        estrutura = self.cmb_estrutura.currentText()
-        midias = self.cmb_midias.currentText()
-        qualidade = self.cmb_qualidade.currentText()
 
         if not url or not email or not senha:
             QMessageBox.warning(self, "Campos Vazios", "Preencha o Link, E-mail e Senha antes de iniciar!")
             return
 
-        self.tabela.setRowCount(0)
-        self._configurar_estilo_tabela(self.tabela)
-
         self.btn_avulso.setEnabled(False)
         self.btn_curso.setEnabled(False)
+
+        self.btn_pausar.setText("⏸️ Pausar")
 
         self.worker = Chip7Worker(url, email, senha, destino, modo_avulso=modo_avulso)
         self.worker.progresso.connect(self._on_progresso)

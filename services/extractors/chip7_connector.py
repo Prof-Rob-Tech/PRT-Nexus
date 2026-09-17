@@ -6,6 +6,7 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from PySide6.QtCore import QMutex, QWaitCondition
 
 try:
     import yt_dlp
@@ -26,6 +27,9 @@ class Chip7Worker(QThread):
     concluido = Signal(bool, str)
 
     def __init__(self, url, email, senha, destino, modo_avulso=False, parent=None):
+        self._pausado = False
+        self._mutex = QMutex()
+        self._condicao = QWaitCondition()
         super().__init__(parent)
         self.url = url.strip() if url else ""
         self.email = email.strip() if email else ""
@@ -246,6 +250,8 @@ class Chip7Worker(QThread):
 
                                 if hasattr(self, 'velocidade'):
                                     self.velocidade.emit(texto_velocidade)
+                                    
+                        self._checar_pausa()
 
                     if yt_dlp:
                         ydl_opts = {
@@ -283,3 +289,21 @@ class Chip7Worker(QThread):
         finally:
             if driver:
                 driver.quit()
+                
+    def pausar(self):
+        self._mutex.lock()
+        self._pausado = True
+        self._mutex.unlock()
+
+    def resumir(self):
+        self._mutex.lock()
+        self._pausado = False
+        self._condicao.wakeAll()
+        self._mutex.unlock()
+
+    def _checar_pausa(self):
+        self._mutex.lock()
+        while self._pausado:
+            self.velocidade.emit("PAUSADO | ETA: --:--")
+            self._condicao.wait(self._mutex)
+        self._mutex.unlock()
