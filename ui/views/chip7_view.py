@@ -473,20 +473,47 @@ class Chip7View(QWidget):
             QMessageBox.warning(self, "Campos Vazios", "Preencha o Link, E-mail e Senha antes de iniciar!")
             return
 
+        # Coleta todas as configurações das Opções Extras e Seletores
+        opcoes = {
+            "baixar_anexos": self.chk_anexos.isChecked(),
+            "gerar_txt": self.chk_txt.isChecked(),
+            "notificar_som": self.chk_notif.isChecked(),
+            "qualidade": self.cmb_qualidade.currentText(),
+            "nome_conteudo": self.txt_nome_conteudo.text().strip(),
+            "estrutura": self.cmb_estrutura.currentText(),
+            "midias": self.cmb_midias.currentText()
+        }
+
         self.btn_avulso.setEnabled(False)
         self.btn_curso.setEnabled(False)
         self.btn_pausar.setEnabled(True)
         self.btn_cancelar.setEnabled(True)
-
         self.btn_pausar.setText("⏸️ Pausar")
 
-        self.worker = Chip7Worker(url, email, senha, destino, modo_avulso=modo_avulso)
+        # Instancia o worker passando o dicionário de opções
+        self.worker = Chip7Worker(url, email, senha, destino, modo_avulso=modo_avulso, opcoes=opcoes)
         self.worker.progresso.connect(self._on_progresso)
         self.worker.velocidade.connect(self._on_velocidade)
         self.worker.item_progresso.connect(self._on_item_progresso)
         self.worker.item_concluido.connect(self._on_item_concluido)
         self.worker.concluido.connect(self._on_concluido)
         self.worker.start()
+
+    def _on_concluido(self, sucesso, mensagem):
+        self.btn_avulso.setEnabled(True)
+        self.btn_curso.setEnabled(True)
+        self.btn_pausar.setEnabled(False)
+        self.btn_cancelar.setEnabled(False)
+
+        # Dispara aviso sonoro do sistema se o checkbox de notificação estiver marcado
+        if self.chk_notif.isChecked():
+            from PySide6.QtWidgets import QApplication
+            QApplication.beep()
+
+        if sucesso:
+            QMessageBox.information(self, "Chip 7", mensagem)
+        else:
+            QMessageBox.critical(self, "Chip 7 - Erro", mensagem)
 
     def _on_progresso(self, msg, pct):
         self.pbar_global.setValue(pct)
@@ -587,13 +614,3 @@ class Chip7View(QWidget):
 
             self.tabela.setCellWidget(row, 3, pbar)
 
-    def _on_concluido(self, sucesso, mensagem):
-        self.btn_avulso.setEnabled(True)
-        self.btn_curso.setEnabled(True)
-        self.btn_pausar.setEnabled(False)
-        self.btn_cancelar.setEnabled(False)
-
-        if sucesso:
-            QMessageBox.information(self, "Chip 7", mensagem)
-        else:
-            QMessageBox.critical(self, "Chip 7 - Erro", mensagem)

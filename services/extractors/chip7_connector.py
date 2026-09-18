@@ -1,12 +1,12 @@
 import os
 import re
+import requests
 import time
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QThread, Signal, QMutex, QWaitCondition
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from PySide6.QtCore import QMutex, QWaitCondition
 
 try:
     import yt_dlp
@@ -26,16 +26,19 @@ class Chip7Worker(QThread):
     item_concluido = Signal(dict)
     concluido = Signal(bool, str)
 
-    def __init__(self, url, email, senha, destino, modo_avulso=False, parent=None):
+    def __init__(self, url, email, senha, destino, modo_avulso=False, opcoes=None, parent=None):
+        super().__init__(parent)
         self._pausado = False
         self._mutex = QMutex()
         self._condicao = QWaitCondition()
-        super().__init__(parent)
+        
         self.url = url.strip() if url else ""
         self.email = email.strip() if email else ""
         self.senha = senha.strip() if senha else ""
         self.destino = destino.strip() if destino else os.path.join(os.path.expanduser("~"), "Downloads", "PRT_Nexus")
         self.modo_avulso = modo_avulso
+        self.opcoes = opcoes or {}
+        self.relatorio_txt = []
 
     def extrair_url_video(self, driver):
         """Busca URLs de player em iframes, tags video ou scripts da página."""
@@ -76,6 +79,72 @@ class Chip7Worker(QThread):
                 pass
 
         return video_url
+
+    def _baixar_anexos_aula(self, driver, pasta_destino):
+        """Localiza e descarrega arquivos anexos (PDFs, ZIPs, Apostilas, etc.) da página da aula."""
+        if not self.opcoes.get("baixar_anexos", False):
+            return
+
+        try:
+            links = driver.find_elements(By.TAG_NAME, "a")
+            extensoes_validas = ('.pdf', '.zip', '.rar', '.7z', '.epub', '.docx', '.xlsx', '.pptx', '.txt')
+            
+            for link in links:
+                self._checar_pausa()
+                try:
+                    href = link.get_attribute("href")
+                    if not href or href.startswith("javascript:"):
+                        continue
+                    
+                    nome_link = link.text.strip() or "anexo"
+                    is_anexo = any(href.lower().endswith(ext) or ext in href.lower() for ext in extensoes_validas)
+                    
+                    if is_anexo or "download" in href.lower() or "attachment" in href.lower():
+                        nome_limpo = re.sub(r'[\\/*?:"<>|]', '_', nome_link)
+                        if not any(nome_limpo.lower().endswith(ext) for ext in extensoes_validas):
+                            match_ext = re.search(r'\.(pdf|zip|rar|7z|epub|docx|xlsx|pptx|txt)', href, re.IGNORECASE)
+                            ext = match_ext.group(0) if match_ext else ".pdf"
+                            nome_limpo += ext
+
+                        caminho_anexo = os.path.join(pasta_destino, nome_limpo)
+                        if not os.path.exists(caminho_anexo):
+                            resp = requests.get(href, timeout=15)
+                            if resp.status_code == 200:
+                                with open(caminho_anexo, "wb") as f:
+                                    f.write(resp.content)
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+    def _coletar_descricao_aula(self, driver, num_mod, titulo_mod, num_aula, titulo_aula):
+        """Coleta informações e descrições das aulas para compor o relatório .txt."""
+        if not self.opcoes.get("gerar_txt", False):
+            return
+
+        texto_descricao = ""
+        try:
+            elementos_texto = driver.find_elements(
+                By.XPATH, 
+                "//div[contains(@class, 'desc') or contains(@class, 'content') or contains(@class, 'text') or contains(@class, 'lesson')]//p"
+            )
+            if elementos_texto:
+                paragrafos = [el.text.strip() for el in elementos_texto if el.text.strip()]
+                texto_descricao = "\n".join(paragrafos)
+        except Exception:
+            pass
+
+        if not texto_descricao:
+            texto_descricao = "Sem descrição de texto disponível para esta aula."
+
+        bloco = (
+            f"MÓDULO {num_mod:02d}: {titulo_mod}\n"
+            f"AULA {num_aula:02d}: {titulo_aula}\n"
+            f"LINK: {driver.current_url}\n"
+            f"DESCRIÇÃO:\n{texto_descricao}\n"
+            f"{'-'*60}\n\n"
+        )
+        self.relatorio_txt.append(bloco)
 
     def run(self):
         driver = None
@@ -146,7 +215,13 @@ class Chip7Worker(QThread):
 
             # 3. Processamento de Pastas e Downloads
             for modulo in estrutura_curso:
-                nome_curso_limpo = mapper.limpar_nome(modulo.get("nome_curso", "FACE ID 3.0"))
+                self._checar_pausa()
+                nome_curso_limpo = mapper.limpar_nome(modulo.get("nome_curso", "Chip 7 Conteudo"))
+                
+                # Se houver nome customizado vindo das opções, utiliza ele
+                if self.opcoes.get("nome_conteudo"):
+                    nome_curso_limpo = mapper.limpar_nome(self.opcoes.get("nome_conteudo"))
+
                 titulo_mod_limpo = mapper.limpar_nome(modulo['titulo_mod'])
 
                 pasta_curso = os.path.join(self.destino, f"01 - {nome_curso_limpo}")
@@ -156,6 +231,7 @@ class Chip7Worker(QThread):
                 os.makedirs(caminho_pasta_modulo, exist_ok=True)
                 
                 for aula in modulo["aulas"]:
+                    self._checar_pausa()
                     aulas_processadas += 1
                     id_tabela = f"{aulas_processadas}"
                         
@@ -202,6 +278,16 @@ class Chip7Worker(QThread):
                                 time.sleep(3)
                     except Exception:
                         pass
+
+                    # Processa anexos e texto para o arquivo .txt
+                    self._baixar_anexos_aula(driver, caminho_pasta_modulo)
+                    self._coletar_descricao_aula(
+                        driver, 
+                        modulo['num_mod'], 
+                        titulo_mod_limpo, 
+                        aula['num_aula'], 
+                        titulo_aula_limpo
+                    )
 
                     # Captura a URL do Vídeo
                     video_url = self.extrair_url_video(driver)
@@ -281,6 +367,16 @@ class Chip7Worker(QThread):
                         "status": "Concluído"
                     })
 
+            # Gera arquivo .txt no final, se a opção estiver marcada
+            if self.opcoes.get("gerar_txt", False) and self.relatorio_txt:
+                caminho_txt = os.path.join(self.destino, "indice_e_descricao_curso.txt")
+                try:
+                    with open(caminho_txt, "w", encoding="utf-8") as f:
+                        f.write("=== ÍNDICE E CONTEÚDO DO CURSO ===\n\n")
+                        f.writelines(self.relatorio_txt)
+                except Exception as err_txt:
+                    print(f"Erro ao salvar arquivo .txt: {err_txt}")
+
             self.progresso.emit("Processo concluído!", 100)
             self.concluido.emit(True, "Processo concluído com sucesso!")
 
@@ -289,7 +385,7 @@ class Chip7Worker(QThread):
         finally:
             if driver:
                 driver.quit()
-                
+
     def pausar(self):
         self._mutex.lock()
         self._pausado = True
