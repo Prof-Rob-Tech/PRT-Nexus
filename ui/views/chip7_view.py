@@ -21,46 +21,60 @@ class Chip7View(QWidget):
         self._conectar_acoes()
 
     def _aplicar_estilos(self):
-        """Aplica estilo dark profissional com botões e campos padronizados."""
+        """Aplica estilo dark com os títulos assentados perfeitamente na linha da borda."""
         self.setStyleSheet("""
+            /* Fundo principal da janela */
+            QWidget {
+                background-color: #121212;
+                color: #ffffff;
+            }
+
+            /* Estilo Global dos GroupBoxes */
             QGroupBox {
-                background-color: #252526;
-                border: 1px solid #3c3c3c;
-                border-radius: 12px;
-                margin-top: 18px;
-                padding-top: 16px;
-                padding-bottom: 10px;
+                background-color: #1e1e1e;
+                border: 1px solid #333333;
+                border-radius: 8px;
+                margin-top: 12px;     /* Espaço justo no topo para a linha da borda */
+                padding-top: 14px;    /* Espaço interno para o conteúdo */
+                padding-bottom: 8px;
+                font-size: 13px;
                 font-weight: bold;
                 color: #ffffff;
             }
+
+            /* Título cravado no meio da linha superior da borda */
             QGroupBox::title {
-                subcontrol-origin: border;
+                subcontrol-origin: margin;
                 subcontrol-position: top left;
-                left: 14px;
-                top: 6px;
-                padding: 0 6px;
-                background-color: #252526;
+                left: 10px;
+                top: 2px;             /* Desce o texto para cruzar exatamente a linha da borda */
+                padding: 0 6px;       /* Cria o recorte na linha atrás do texto */
+                background-color: #121212; /* Mesma cor do fundo para recortar a linha de forma limpa */
                 color: #ffffff;
+            }
+
+            /* Grupo da Tabela sem margem superior extra */
+            QGroupBox#gb_tabela {
+                margin-top: 0px;
+                padding-top: 6px;
             }
 
             QLineEdit, QComboBox {
-                background-color: #1e1e1e;
+                background-color: #252526;
                 border: 1px solid #3a3a3a;
-                border-radius: 8px;
+                border-radius: 6px;
                 color: #ffffff;
                 padding: 6px 10px;
                 font-size: 12px;
-                selection-background-color: #3a3a3a;
-                selection-color: #ffffff;
             }
             QLineEdit:focus, QComboBox:focus {
-                border: 1px solid #555555;
+                border: 1px solid #0066cc;
             }
 
             QLabel.lbl-box {
-                background-color: #1e1e1e;
+                background-color: #252526;
                 border: 1px solid #3a3a3a;
-                border-radius: 8px;
+                border-radius: 6px;
                 color: #cccccc;
                 padding: 6px 10px;
                 font-size: 12px;
@@ -70,13 +84,14 @@ class Chip7View(QWidget):
                 color: #cccccc;
                 font-size: 12px;
                 spacing: 8px;
+                background-color: transparent;
             }
             QCheckBox::indicator {
                 width: 16px;
                 height: 16px;
                 border-radius: 4px;
                 border: 1px solid #444444;
-                background-color: #1e1e1e;
+                background-color: #252526;
             }
             QCheckBox::indicator:checked {
                 background-color: #0066cc;
@@ -87,7 +102,7 @@ class Chip7View(QWidget):
                 background-color: #333333;
                 color: #ffffff;
                 border: 1px solid #444444;
-                border-radius: 8px;
+                border-radius: 6px;
                 padding: 5px 14px;
                 font-weight: bold;
             }
@@ -95,28 +110,20 @@ class Chip7View(QWidget):
                 background-color: #444444;
             }
 
-            /* Botões de Ação na Barra de Progresso */
             QPushButton#btn_pausar, QPushButton#btn_cancelar {
                 background-color: #2b2b2b;
                 color: #ffffff;
                 border: 1px solid #3a3a3a;
-                border-radius: 8px;
+                border-radius: 6px;
                 padding: 5px 12px;
                 font-weight: bold;
                 font-size: 11px;
             }
             QPushButton#btn_pausar:hover {
                 background-color: #3a3a3a;
-                border-color: #555555;
             }
             QPushButton#btn_cancelar:hover {
                 background-color: #8b0000;
-                border-color: #a00000;
-            }
-            QPushButton#btn_pausar:disabled, QPushButton#btn_cancelar:disabled {
-                background-color: #1a1a1a;
-                color: #555555;
-                border-color: #2a2a2a;
             }
 
             QPushButton#btn_limpar {
@@ -131,20 +138,21 @@ class Chip7View(QWidget):
             QPushButton#btn_limpar:hover {
                 background-color: #c0392b;
                 color: #ffffff;
-                border-color: #e74c3c;
             }
         """)
-
+            
     def _montar_interface(self):
         layout_principal = QVBoxLayout(self)
         layout_principal.setContentsMargins(15, 15, 15, 15)
         layout_principal.setSpacing(10)
 
-        # Cabeçalho
+        # Cabeçalho Principal (Mantida a fonte de 22px)
         lbl_titulo = QLabel("Conector Chip 7")
-        lbl_titulo.setStyleSheet("font-size: 16px; font-weight: bold; color: #ffffff;")
+        lbl_titulo.setStyleSheet("font-size: 22px; font-weight: bold; color: #ffffff;")
+        
         lbl_sub = QLabel("Capture, extraia e gerencie conteúdos diretamente do Chip 7.")
-        lbl_sub.setStyleSheet("font-size: 11px; color: #888888;")
+        lbl_sub.setStyleSheet("font-size: 12px; color: #aaaaaa;")
+        
         layout_principal.addWidget(lbl_titulo)
         layout_principal.addWidget(lbl_sub)
 
@@ -159,7 +167,7 @@ class Chip7View(QWidget):
         # 1. Captura de Mídia
         gb_captura = QGroupBox("🔗 Captura de Mídia - Chip 7")
         ly_captura = QVBoxLayout(gb_captura)
-        ly_captura.setContentsMargins(10, 12, 10, 10)
+        ly_captura.setContentsMargins(10, 10, 10, 10)
         ly_captura.setSpacing(8)
 
         self.txt_url = QLineEdit()
@@ -193,10 +201,10 @@ class Chip7View(QWidget):
 
         ly_esq.addWidget(gb_captura)
 
-        # 2. Autenticação (Ajustado)
+        # 2. Autenticação
         gb_auth = QGroupBox("🔐 Autenticação (Áreas Pagas / Privadas)")
         form_auth = QFormLayout(gb_auth)
-        form_auth.setContentsMargins(10, 12, 10, 10)
+        form_auth.setContentsMargins(10, 10, 10, 10)
         form_auth.setSpacing(8)
 
         self.txt_email = QLineEdit()
@@ -218,7 +226,7 @@ class Chip7View(QWidget):
         # 3. Pasta de Destino
         gb_destino = QGroupBox("📁 Pasta de Destino")
         ly_dest = QHBoxLayout(gb_destino)
-        ly_dest.setContentsMargins(10, 12, 10, 10)
+        ly_dest.setContentsMargins(10, 10, 10, 10)
         self.txt_destino = QLineEdit(os.path.join(os.path.expanduser("~"), "Downloads", "PRT_Nexus"))
         self.btn_alterar_dest = QPushButton("Alterar")
         self.btn_alterar_dest.setObjectName("btn_alterar")
@@ -236,7 +244,7 @@ class Chip7View(QWidget):
         # Organização de Pastas
         gb_org = QGroupBox("📁 Organização de Pastas (Curso / Playlist)")
         form_org = QFormLayout(gb_org)
-        form_org.setContentsMargins(10, 12, 10, 10)
+        form_org.setContentsMargins(10, 10, 10, 10)
         form_org.setSpacing(12)
 
         lbl_nome_cnt = QLabel("Nome do Conteúdo")
@@ -268,7 +276,7 @@ class Chip7View(QWidget):
         # Opções Adicionais
         gb_opcoes = QGroupBox("⚙️ Opções Extras de Extração")
         ly_opcoes = QVBoxLayout(gb_opcoes)
-        ly_opcoes.setContentsMargins(12, 14, 12, 12)
+        ly_opcoes.setContentsMargins(12, 12, 12, 12)
         ly_opcoes.setSpacing(10)
 
         self.chk_anexos = QCheckBox("Baixar materiais anexos das aulas (PDFs, ZIPs, Apostilas)")
@@ -329,7 +337,6 @@ class Chip7View(QWidget):
             }
         """)
 
-        # Botões Pausar e Cancelar (Iniciam Desativados)
         self.btn_pausar = QPushButton("⏸️ Pausar")
         self.btn_pausar.setObjectName("btn_pausar")
         self.btn_pausar.setEnabled(False)
@@ -347,16 +354,24 @@ class Chip7View(QWidget):
         layout_principal.addLayout(ly_prog_geral)
 
         # ================= TABELA DE MÍDIAS =================
-        gb_tabela = QGroupBox("📦 Mídias Concluídas do Chip 7 (Duplo clique para abrir a pasta)")
+        gb_tabela = QGroupBox()
+        gb_tabela.setObjectName("gb_tabela")
         ly_tab = QVBoxLayout(gb_tabela)
-        ly_tab.setContentsMargins(10, 12, 10, 10)
+        ly_tab.setContentsMargins(12, 6, 12, 10)
+        ly_tab.setSpacing(8)
 
+        # Cabeçalho Horizontal
         ly_tab_top = QHBoxLayout()
-        ly_tab_top.addStretch()
+        lbl_tabela_titulo = QLabel("📦 Mídias Concluídas do Chip 7 (Duplo clique para abrir a pasta)")
+        lbl_tabela_titulo.setStyleSheet("font-size: 12px; font-weight: bold; color: #ffffff;")
+
         self.btn_limpar = QPushButton("🗑️ Limpar Concluídos")
         self.btn_limpar.setObjectName("btn_limpar")
+
+        ly_tab_top.addWidget(lbl_tabela_titulo)
+        ly_tab_top.addStretch()
         ly_tab_top.addWidget(self.btn_limpar)
-        
+
         ly_tab.addLayout(ly_tab_top)
 
         self.tabela = QTableWidget(0, 4)
@@ -473,7 +488,6 @@ class Chip7View(QWidget):
             QMessageBox.warning(self, "Campos Vazios", "Preencha o Link, E-mail e Senha antes de iniciar!")
             return
 
-        # Coleta todas as configurações das Opções Extras e Seletores
         opcoes = {
             "baixar_anexos": self.chk_anexos.isChecked(),
             "gerar_txt": self.chk_txt.isChecked(),
@@ -490,7 +504,6 @@ class Chip7View(QWidget):
         self.btn_cancelar.setEnabled(True)
         self.btn_pausar.setText("⏸️ Pausar")
 
-        # Instancia o worker passando o dicionário de opções
         self.worker = Chip7Worker(url, email, senha, destino, modo_avulso=modo_avulso, opcoes=opcoes)
         self.worker.progresso.connect(self._on_progresso)
         self.worker.velocidade.connect(self._on_velocidade)
@@ -505,7 +518,6 @@ class Chip7View(QWidget):
         self.btn_pausar.setEnabled(False)
         self.btn_cancelar.setEnabled(False)
 
-        # Dispara aviso sonoro do sistema se o checkbox de notificação estiver marcado
         if self.chk_notif.isChecked():
             from PySide6.QtWidgets import QApplication
             QApplication.beep()
@@ -613,4 +625,3 @@ class Chip7View(QWidget):
                 pbar.setFormat("%p%")
 
             self.tabela.setCellWidget(row, 3, pbar)
-
