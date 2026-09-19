@@ -1,5 +1,6 @@
 import re
 import time
+import unicodedata
 from selenium.webdriver.common.by import By
 
 
@@ -10,7 +11,8 @@ class Chip7Mapper:
         "FALE CONOSCO", "ATENDIMENTO", "POLÍTICA DE PRIVACIDADE", "TERMOS DE USO",
         "TODOS OS DIREITOS", "DIREITOS RESERVADOS", "LOGOUT", "SAIR",
         "BEM VINDO", "BEM-VINDO", "DÚVIDAS", "DUVIDAS", "SUPORTE", 
-        "CONTATO", "ESQUECEU A SENHA", "ENTRAR", "NOSSOS CURSOS", "OUTROS CURSOS"
+        "CONTATO", "ESQUECEU A SENHA", "ENTRAR", "NOSSOS CURSOS", "OUTROS CURSOS",
+        "ÁREA DO ALUNO", "CURSOS EAD", "CURSOS PRESENCIAIS"
     ]
 
     DOMINIOS_BLOQUEADOS = [
@@ -23,12 +25,27 @@ class Chip7Mapper:
         "/logout", "/perfil", "/certificados", "tel:", "mailto:"
     ]
 
+    # Módulos reais do curso
+    NOMES_MODULOS = [
+        "MÉTODO CHIP",
+        "IPHONE X AO 13 PRO MAX",
+        "BÔNUS FACE ID"
+    ]
+
     def __init__(self, driver=None):
         self.driver = driver
 
     @staticmethod
+    def normalizar(texto):
+        """Remove acentos, espaços e caracteres especiais para comparação segura."""
+        if not texto:
+            return ""
+        nfkd = unicodedata.normalize('NFD', str(texto))
+        sem_acento = u"".join([c for c in nfkd if not unicodedata.combining(c)])
+        return re.sub(r'[^A-Z0-9]', '', sem_acento.upper())
+
+    @staticmethod
     def limpar_nome(texto, titulo_modulo=""):
-        """Método exigido pelo gerenciador de downloads para higienizar nomes de arquivos."""
         if not texto:
             return ""
 
@@ -52,45 +69,19 @@ class Chip7Mapper:
                 if l.upper() != titulo_modulo.upper():
                     return l
 
-        return linhas_validas[-1]
-
-    @staticmethod
-    def extrair_partes(texto):
-        """Separa o texto bruto do card em (titulo_modulo, titulo_aula)."""
-        if not texto:
-            return "", ""
-
-        linhas_raw = [l.strip() for l in re.split(r'[\n|]', str(texto)) if l.strip()]
-        linhas_limpas = []
-
-        for l in linhas_raw:
-            l_clean = re.sub(r'\b(Concluído|Concluido|Assistido|Pendente)\b', '', l, flags=re.IGNORECASE).strip()
-            l_clean = re.sub(r'\b\d{1,2}:\d{2}(?::\d{2})?\b', '', l_clean).strip()
-            l_clean = re.sub(r'\.mp4$', '', l_clean, flags=re.IGNORECASE).strip()
-            l_clean = re.sub(r'[\\/*?:"<>|]', '', l_clean).strip()
-            
-            if len(l_clean) >= 3 and not re.match(r'^\d+%$', l_clean):
-                linhas_limpas.append(l_clean)
-
-        if not linhas_limpas:
-            return "", ""
-
-        if len(linhas_limpas) == 1:
-            return "", linhas_limpas[0]
-
-        mod_title = linhas_limpas[0]
-        aula_title = linhas_limpas[-1]
-
-        if mod_title.upper() == aula_title.upper():
-            return "", aula_title
-
-        return mod_title, aula_title
+        return linhas_validas[0]
 
     def eh_termo_invalido(self, texto, href=""):
         if not texto:
             return True
         txt_upper = texto.upper().strip()
         href_lower = href.lower() if href else ""
+
+        # Nunca bloqueia nomes de módulos conhecidos
+        txt_norm = self.normalizar(texto)
+        for mod in self.NOMES_MODULOS:
+            if txt_norm == self.normalizar(mod):
+                return False
 
         if re.search(r'\(?\d{2}\)?\s*9?[\s\.]?\d{4,5}[-\s\.]?\d{4}', texto):
             return True
@@ -104,58 +95,95 @@ class Chip7Mapper:
 
         return False
 
+    def obter_nome_curso(self, driver=None):
+        return "FACE ID 3.0"
+
     def mapear_curso(self, driver=None):
         if driver:
             self.driver = driver
 
-        time.sleep(1.5)
+        time.sleep(2.0)
+        nome_curso = "FACE ID 3.0"
 
+        # Varre todos os elementos da barra lateral
         js_script = """
         return (function() {
-            let grid = document.querySelector('.student-course-grid') || document.querySelector('.student-course-layout') || document.body;
-            let elementos = Array.from(grid.querySelectorAll('li, a, div[class*="lesson"], div[class*="aula"]'));
+            let todos = Array.from(document.querySelectorAll('a, div, li, span, h1, h2, h3, h4, h5, h6, p'));
+            
+            let sidebarItems = todos.filter(el => {
+                if (el.closest('header, footer, .video-player, #player, iframe, video')) return false;
+                let rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0 && rect.left < (window.innerWidth * 0.45) && rect.top > 80;
+            });
 
-            let itens = [];
-            elementos.forEach(el => {
-                if (el.closest('footer, header, nav')) return;
+            let extraidos = [];
+            let vistos = new Set();
+
+            sidebarItems.forEach(el => {
                 let txt = el.innerText ? el.innerText.trim() : '';
-                let href = el.getAttribute('href') || el.getAttribute('data-url') || '';
-                if (txt.length >= 3) {
-                    itens.push({ text: txt, href: href });
+                if (!txt || txt.length < 3 || txt.length > 120) return;
+
+                let primeiraLinha = txt.split('\\n')[0].trim();
+                if (primeiraLinha.length < 3) return;
+
+                let rect = el.getBoundingClientRect();
+                let href = el.getAttribute('href') || el.getAttribute('data-url') || (el.closest('a') ? el.closest('a').getAttribute('href') : '');
+
+                if (!vistos.has(primeiraLinha)) {
+                    vistos.add(primeiraLinha);
+                    extraidos.push({
+                        text: primeiraLinha,
+                        href: href || '',
+                        top: rect.top,
+                        raw: txt
+                    });
                 }
             });
 
-            return itens;
+            extraidos.sort((a, b) => a.top - b.top);
+            return extraidos;
         })();
         """
 
         raw_items = self.driver.execute_script(js_script) or []
-        
+
         modulos_dict = {}
-        modulo_atual_nome = "MÉTODO CHIP"
+        modulo_atual = "MÉTODO CHIP"
         vistos_globais = set()
+
+        # Dicionário de módulos normalizados
+        modulos_norm = {self.normalizar(m): m for m in self.NOMES_MODULOS}
 
         for item in raw_items:
             txt_raw = item.get("text", "")
             href = item.get("href", "")
+            txt_norm = self.normalizar(txt_raw)
 
-            mod_ext, aula_ext = self.extrair_partes(txt_raw)
-
-            if not aula_ext or self.eh_termo_invalido(aula_ext, href):
+            if txt_norm == self.normalizar(nome_curso):
                 continue
 
-            if mod_ext and not self.eh_termo_invalido(mod_ext):
-                modulo_atual_nome = mod_ext
+            # 1. Verifica se o texto é um dos módulos (insensível a acentos/maiúsculas)
+            if txt_norm in modulos_norm:
+                modulo_atual = modulos_norm[txt_norm]
+                continue
 
-            if modulo_atual_nome not in modulos_dict:
-                modulos_dict[modulo_atual_nome] = []
+            if self.eh_termo_invalido(txt_raw, href):
+                continue
 
-            chave_aula = f"{modulo_atual_nome}::{aula_ext}"
+            # 2. Limpa o nome da aula
+            aula_limpa = self.limpar_nome(txt_raw, titulo_modulo=modulo_atual)
+            if not aula_limpa:
+                continue
+
+            if modulo_atual not in modulos_dict:
+                modulos_dict[modulo_atual] = []
+
+            chave_aula = f"{modulo_atual}::{aula_limpa}"
             if chave_aula not in vistos_globais:
                 vistos_globais.add(chave_aula)
-                modulos_dict[modulo_atual_nome].append({
-                    "num_aula": len(modulos_dict[modulo_atual_nome]) + 1,
-                    "titulo": aula_ext,
+                modulos_dict[modulo_atual].append({
+                    "num_aula": len(modulos_dict[modulo_atual]) + 1,
+                    "titulo": aula_limpa,
                     "url": href if href and not href.endswith("#") and "javascript:" not in href else "",
                     "texto_original": txt_raw
                 })
@@ -163,13 +191,13 @@ class Chip7Mapper:
         estrutura_final = []
         num_mod = 1
 
-        for mod_nome, aulas in modulos_dict.items():
-            if aulas:
+        for mod_nome in self.NOMES_MODULOS:
+            if mod_nome in modulos_dict and modulos_dict[mod_nome]:
                 estrutura_final.append({
-                    "nome_curso": "FACE ID 3.0",
+                    "nome_curso": nome_curso,
                     "num_mod": num_mod,
                     "titulo_mod": mod_nome,
-                    "aulas": aulas
+                    "aulas": modulos_dict[mod_nome]
                 })
                 num_mod += 1
 

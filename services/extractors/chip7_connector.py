@@ -26,6 +26,15 @@ class Chip7Worker(QThread):
     item_concluido = Signal(dict)
     concluido = Signal(bool, str)
 
+    NOMES_GENERICOS = [
+        "CHIP 7 - CURSO EXTRAÍDO",
+        "CHIP 7 - CURSO EXTRAIDO",
+        "01 - CHIP 7 - CURSO EXTRAÍDO",
+        "CHIP 7 CONTEUDO",
+        "CHIP 7 CONTEÚDO",
+        "SEM_NOME"
+    ]
+
     def __init__(self, url, email, senha, destino, modo_avulso=False, opcoes=None, parent=None):
         super().__init__(parent)
         self._pausado = False
@@ -42,19 +51,19 @@ class Chip7Worker(QThread):
 
     def extrair_url_video(self, driver):
         """Busca URLs de player em iframes, tags video ou scripts da página."""
-        time.sleep(2)
+        time.sleep(2.5)
         video_url = None
 
         # 1. Procura em iFrames
-        iframes = driver.find_elements(By.TAG_NAME, "iframe")
-        for iframe in iframes:
-            try:
+        try:
+            iframes = driver.find_elements(By.TAG_NAME, "iframe")
+            for iframe in iframes:
                 src = iframe.get_attribute("src") or iframe.get_attribute("data-src") or ""
-                if any(p in src.lower() for p in ["vimeo", "youtube", "panda", "wistia", "player", "embed", "converteai", "vturb", "bunny"]):
+                if src and any(p in src.lower() for p in ["vimeo", "youtube", "panda", "wistia", "player", "embed", "converteai", "vturb", "bunny"]):
                     video_url = src
                     break
-            except Exception:
-                continue
+        except Exception:
+            pass
 
         # 2. Procura em tags <video> ou <source>
         if not video_url:
@@ -66,7 +75,6 @@ class Chip7Worker(QThread):
                         video_url = src
                         break
                     
-                    # Procura tags <source> dentro do <video>
                     sources = v.find_elements(By.TAG_NAME, "source")
                     for s in sources:
                         s_src = s.get_attribute("src")
@@ -78,17 +86,28 @@ class Chip7Worker(QThread):
             except Exception:
                 pass
 
+        # 3. Varredura em scripts da página para links HLS (.m3u8)
+        if not video_url:
+            try:
+                page_source = driver.page_source
+                m3u8_matches = re.findall(r'https?://[^\s\'"]+\.m3u8[^\s\'"]*', page_source)
+                if m3u8_matches:
+                    video_url = m3u8_matches[0]
+            except Exception:
+                pass
+
         return video_url
 
     def _baixar_anexos_aula(self, driver, pasta_destino):
-        """Localiza e descarrega arquivos anexos (PDFs, ZIPs, Apostilas, etc.) da página da aula."""
+        """Localiza e descarrega arquivos anexos da página da aula."""
         if not self.opcoes.get("baixar_anexos", False):
             return
 
         try:
             links = driver.find_elements(By.TAG_NAME, "a")
             extensoes_validas = ('.pdf', '.zip', '.rar', '.7z', '.epub', '.docx', '.xlsx', '.pptx', '.txt')
-            
+            headers = {'User-Agent': driver.execute_script("return navigator.userAgent;")}
+
             for link in links:
                 self._checar_pausa()
                 try:
@@ -108,7 +127,7 @@ class Chip7Worker(QThread):
 
                         caminho_anexo = os.path.join(pasta_destino, nome_limpo)
                         if not os.path.exists(caminho_anexo):
-                            resp = requests.get(href, timeout=15)
+                            resp = requests.get(href, headers=headers, timeout=15)
                             if resp.status_code == 200:
                                 with open(caminho_anexo, "wb") as f:
                                     f.write(resp.content)
@@ -118,7 +137,7 @@ class Chip7Worker(QThread):
             pass
 
     def _coletar_descricao_aula(self, driver, num_mod, titulo_mod, num_aula, titulo_aula):
-        """Coleta informações e descrições das aulas para compor o relatório .txt."""
+        """Coleta descrições para o arquivo de texto."""
         if not self.opcoes.get("gerar_txt", False):
             return
 
@@ -146,6 +165,19 @@ class Chip7Worker(QThread):
         )
         self.relatorio_txt.append(bloco)
 
+    def _resolver_nome_curso(self, mapper, modulo):
+        """Determina o nome da pasta do curso descartando termos genéricos."""
+        nome_custom = self.opcoes.get("nome_conteudo", "").strip()
+        nome_extraido = modulo.get("nome_curso", "").strip()
+
+        if nome_custom and nome_custom.upper() not in self.NOMES_GENERICOS:
+            return mapper.limpar_nome(nome_custom)
+
+        if nome_extraido and nome_extraido.upper() not in self.NOMES_GENERICOS:
+            return mapper.limpar_nome(nome_extraido)
+
+        return "FACE ID 3.0"
+
     def run(self):
         driver = None
         try:
@@ -163,7 +195,7 @@ class Chip7Worker(QThread):
             self.progresso.emit("A aceder ao Chip 7...", 10)
             driver.get(self.url)
             
-            # 1. Painel de Login
+            # 1. Login
             self.progresso.emit("A abrir painel de login...", 15)
             try:
                 btn_entrar_menu = WebDriverWait(driver, 5).until(
@@ -213,15 +245,11 @@ class Chip7Worker(QThread):
                 self.concluido.emit(False, "Nenhuma aula válida foi encontrada no menu. Verifique o link informado.")
                 return
 
-            # 3. Processamento de Pastas e Downloads
+            # 3. Processamento e Downloads
             for modulo in estrutura_curso:
                 self._checar_pausa()
-                nome_curso_limpo = mapper.limpar_nome(modulo.get("nome_curso", "Chip 7 Conteudo"))
                 
-                # Se houver nome customizado vindo das opções, utiliza ele
-                if self.opcoes.get("nome_conteudo"):
-                    nome_curso_limpo = mapper.limpar_nome(self.opcoes.get("nome_conteudo"))
-
+                nome_curso_limpo = self._resolver_nome_curso(mapper, modulo)
                 titulo_mod_limpo = mapper.limpar_nome(modulo['titulo_mod'])
 
                 pasta_curso = os.path.join(self.destino, f"01 - {nome_curso_limpo}")
@@ -235,7 +263,7 @@ class Chip7Worker(QThread):
                     aulas_processadas += 1
                     id_tabela = f"{aulas_processadas}"
                         
-                    titulo_aula_limpo = mapper.limpar_nome(aula['titulo'])
+                    titulo_aula_limpo = mapper.limpar_nome(aula['titulo'], titulo_modulo=titulo_mod_limpo)
                     nome_base_arquivo = f"{aula['num_aula']:02d} - {titulo_aula_limpo}"
                         
                     caminho_template_ytdlp = os.path.join(caminho_pasta_modulo, f"{nome_base_arquivo}.%(ext)s")
@@ -248,9 +276,9 @@ class Chip7Worker(QThread):
                         "status": "A localizar vídeo..."
                     })
 
-                    # Navegação até a aula
+                    # Navegação com fallback (Sidebar primeiro, depois página geral)
                     try:
-                        if aula["url"] and aula["url"] != driver.current_url:
+                        if aula["url"] and aula["url"] != driver.current_url and not aula["url"].startswith("javascript:"):
                             driver.get(aula["url"])
                             time.sleep(3)
                         elif aula["texto_original"]:
@@ -260,14 +288,27 @@ class Chip7Worker(QThread):
 
                             alvo = None
                             try:
-                                elementos_pagina = driver.find_elements(
+                                # Tenta encontrar no menu lateral
+                                elementos_menu = driver.find_elements(
                                     By.XPATH, 
-                                    f"//*[contains(translate(text(), 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'), '{texto_busca.upper()}')]"
+                                    f"//aside//*[contains(translate(text(), 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'), '{texto_busca.upper()}')] | "
+                                    f"//div[contains(@class, 'sidebar')]//*[contains(translate(text(), 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'), '{texto_busca.upper()}')]"
                                 )
-                                for el in elementos_pagina:
+                                for el in elementos_menu:
                                     if el.is_displayed():
                                         alvo = el
                                         break
+                                
+                                # Se não estiver no sidebar (ex: em visualização de grid), busca no corpo principal
+                                if not alvo:
+                                    elementos_gerais = driver.find_elements(
+                                        By.XPATH, 
+                                        f"//*[contains(translate(text(), 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'), '{texto_busca.upper()}')]"
+                                    )
+                                    for el in elementos_gerais:
+                                        if el.is_displayed() and not el.find_elements(By.XPATH, "./ancestor::header | ./ancestor::footer"):
+                                            alvo = el
+                                            break
                             except Exception:
                                 pass
 
@@ -279,7 +320,6 @@ class Chip7Worker(QThread):
                     except Exception:
                         pass
 
-                    # Processa anexos e texto para o arquivo .txt
                     self._baixar_anexos_aula(driver, caminho_pasta_modulo)
                     self._coletar_descricao_aula(
                         driver, 
@@ -289,7 +329,6 @@ class Chip7Worker(QThread):
                         titulo_aula_limpo
                     )
 
-                    # Captura a URL do Vídeo
                     video_url = self.extrair_url_video(driver)
 
                     if not video_url:
@@ -302,7 +341,6 @@ class Chip7Worker(QThread):
                         })
                         continue
 
-                    # Download com yt_dlp
                     ultima_atualizacao = [0]
 
                     def hook_download(d):
@@ -367,7 +405,6 @@ class Chip7Worker(QThread):
                         "status": "Concluído"
                     })
 
-            # Gera arquivo .txt no final, se a opção estiver marcada
             if self.opcoes.get("gerar_txt", False) and self.relatorio_txt:
                 caminho_txt = os.path.join(self.destino, "indice_e_descricao_curso.txt")
                 try:
