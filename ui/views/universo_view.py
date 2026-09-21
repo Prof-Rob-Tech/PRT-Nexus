@@ -1,10 +1,11 @@
 import os
 import re
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QGroupBox, QLineEdit, 
-    QComboBox, QPushButton, QMessageBox, QTableWidget, QTableWidgetItem, QProgressBar, 
-    QHeaderView, QFileDialog
+    QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QGroupBox, QLineEdit,
+    QComboBox, QPushButton, QMessageBox, QTableWidget, QTableWidgetItem, QProgressBar,
+    QHeaderView, QFileDialog, QCheckBox, QFrame
 )
 from services.extractors.universo_mapper import UniversoWorker
 
@@ -20,67 +21,119 @@ class UniversoView(QWidget):
         self._conectar_acoes()
 
     def _aplicar_estilos(self):
-        """Aplica o CSS rebaixando o título para revelar a linha superior da borda."""
+        """Aplica o mesmo estilo visual do Conector Chip 7."""
         self.setStyleSheet("""
-            /* QGroupBox com a linha superior visível */
-            QGroupBox {
-                background-color: #252526;
-                border: 1px solid #3c3c3c;
-                border-radius: 6px;
-                margin-top: 18px;
-                padding-top: 16px;
-                padding-bottom: 10px;
-                font-weight: bold;
-                color: #ffffff;
-            }
-            QGroupBox::title {
-                subcontrol-origin: border;
-                subcontrol-position: top left;
-                left: 12px;
-                top: 6px;
-                padding: 0 4px;
-                background-color: #252526;
+            QWidget {
+                background-color: #1e1e1e;
                 color: #ffffff;
             }
 
-            /* Campos de Entrada de Texto e ComboBox */
-            QLineEdit, QComboBox {
+            QGroupBox {
                 background-color: #1e1e1e;
-                border: 1px solid #3a3a3a;
-                border-radius: 4px;
+                border: 1px solid #333333;
+                border-radius: 8px;
+                margin-top: 4px;
+                padding-top: 22px;
+                padding-bottom: 8px;
+                font-size: 13px;
+                font-weight: bold;
                 color: #ffffff;
-                padding: 5px 8px;
+            }
+
+            QGroupBox::title {
+                subcontrol-origin: padding;
+                subcontrol-position: top left;
+                left: 10px;
+                top: 6px;
+                padding: 0 4px;
+                background-color: transparent;
+                color: #ffffff;
+            }
+            QFrame#gb_tabela {
+                background-color: #1e1e1e;
+                border: 1px solid #3c3c3c;
+                border-radius: 12px;
+            }
+
+            QLineEdit, QComboBox {
+                background-color: #252526;
+                border: 1px solid #3a3a3a;
+                border-radius: 6px;
+                color: #ffffff;
+                padding: 6px 10px;
                 font-size: 12px;
             }
             QLineEdit:focus, QComboBox:focus {
                 border: 1px solid #0066cc;
             }
-            QLineEdit:read-only {
-                background-color: #181818;
-                color: #888888;
-            }
 
-            /* Rótulos dos formulários com moldura fina */
             QLabel.lbl-box {
-                background-color: #1e1e1e;
+                background-color: #252526;
                 border: 1px solid #3a3a3a;
-                border-radius: 4px;
+                border-radius: 6px;
                 color: #cccccc;
-                padding: 5px 8px;
+                padding: 6px 10px;
                 font-size: 12px;
             }
 
-            /* Botão Secundário */
+            QCheckBox {
+                color: #cccccc;
+                font-size: 12px;
+                spacing: 8px;
+                background-color: transparent;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+                border-radius: 4px;
+                border: 1px solid #444444;
+                background-color: #252526;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #0066cc;
+                border-color: #0066cc;
+            }
+
             QPushButton#btn_alterar {
                 background-color: #333333;
                 color: #ffffff;
                 border: 1px solid #444444;
-                border-radius: 4px;
-                padding: 4px 12px;
+                border-radius: 6px;
+                padding: 5px 14px;
                 font-weight: bold;
             }
             QPushButton#btn_alterar:hover {
                 background-color: #444444;
+            }
+
+            QPushButton#btn_pausar, QPushButton#btn_cancelar {
+                background-color: #2b2b2b;
+                color: #ffffff;
+                border: 1px solid #3a3a3a;
+                border-radius: 6px;
+                padding: 5px 12px;
+                font-weight: bold;
+                font-size: 11px;
+            }
+            QPushButton#btn_pausar:hover {
+                background-color: #3a3a3a;
+            }
+            QPushButton#btn_cancelar:hover {
+                background-color: #8b0000;
+            }
+
+            QPushButton#btn_limpar {
+                background-color: #2b2b2b;
+                color: #aaaaaa;
+                border: 1px solid #3a3a3a;
+                border-radius: 6px;
+                padding: 4px 10px;
+                font-size: 11px;
+                font-weight: bold;
+            }
+            QPushButton#btn_limpar:hover {
+                background-color: #c0392b;
+                color: #ffffff;
             }
         """)
 
@@ -89,33 +142,28 @@ class UniversoView(QWidget):
         layout_principal.setContentsMargins(15, 15, 15, 15)
         layout_principal.setSpacing(10)
 
-        # Cabeçalho
         lbl_titulo = QLabel("Conector Universo Técnico")
-        lbl_titulo.setStyleSheet("font-size: 16px; font-weight: bold; color: #ffffff;")
+        lbl_titulo.setStyleSheet("font-size: 24px; font-weight: bold; color: #ffffff;")
         lbl_sub = QLabel("Capture, extraia e gerencie conteúdos diretamente do Universo Técnico.")
-        lbl_sub.setStyleSheet("font-size: 11px; color: #888888;")
+        lbl_sub.setStyleSheet("font-size: 14px; color: #888888;")
         layout_principal.addWidget(lbl_titulo)
         layout_principal.addWidget(lbl_sub)
 
-        # Área Superior (Duas Colunas)
         layout_top = QHBoxLayout()
         layout_top.setSpacing(12)
 
-        # ================= COLUNA ESQUERDA =================
         ly_esq = QVBoxLayout()
         ly_esq.setSpacing(10)
 
-        # 1. Captura de Mídia
         gb_captura = QGroupBox("🔗 Captura de Mídia - Universo Técnico")
         ly_captura = QVBoxLayout(gb_captura)
-        ly_captura.setContentsMargins(10, 12, 10, 10)
+        ly_captura.setContentsMargins(10, 10, 10, 10)
         ly_captura.setSpacing(8)
 
         self.txt_url = QLineEdit()
         self.txt_url.setPlaceholderText("Cole o link do vídeo, aula ou curso aqui...")
         ly_captura.addWidget(self.txt_url)
 
-        # Seleção de Qualidade
         ly_qual = QHBoxLayout()
         lbl_qual = QLabel("Qualidade:")
         lbl_qual.setProperty("class", "lbl-box")
@@ -130,31 +178,29 @@ class UniversoView(QWidget):
         ly_qual.addWidget(self.cmb_qualidade, stretch=1)
         ly_captura.addLayout(ly_qual)
 
-        # Botões de Ação
         ly_btns = QHBoxLayout()
         self.btn_avulso = QPushButton("⚡ Baixar Mídia Avulsa")
-        self.btn_avulso.setStyleSheet("background-color: #0066cc; color: white; font-weight: bold; padding: 7px; border-radius: 4px; border: none;")
-        
+        self.btn_avulso.setStyleSheet("background-color: #0066cc; color: white; font-weight: bold; padding: 8px; border-radius: 8px; border: none;")
+
         self.btn_curso = QPushButton("🗺️ Mapear e Baixar Curso / Playlist")
-        self.btn_curso.setStyleSheet("background-color: #2ecc71; color: white; font-weight: bold; padding: 7px; border-radius: 4px; border: none;")
-        
+        self.btn_curso.setStyleSheet("background-color: #2ecc71; color: white; font-weight: bold; padding: 8px; border-radius: 8px; border: none;")
+
         ly_btns.addWidget(self.btn_avulso)
         ly_btns.addWidget(self.btn_curso)
         ly_captura.addLayout(ly_btns)
 
         ly_esq.addWidget(gb_captura)
 
-        # 2. Autenticação
         gb_auth = QGroupBox("🔐 Autenticação (Áreas Pagas / Privadas)")
         form_auth = QFormLayout(gb_auth)
-        form_auth.setContentsMargins(10, 12, 10, 10)
+        form_auth.setContentsMargins(10, 10, 10, 10)
         form_auth.setSpacing(8)
 
         self.txt_email = QLineEdit()
-        self.txt_email.setPlaceholderText("E-mail / Usuário")
+        self.txt_email.setPlaceholderText("digite seu e-mail do Universo Técnico")
         self.txt_senha = QLineEdit()
         self.txt_senha.setEchoMode(QLineEdit.EchoMode.Password)
-        self.txt_senha.setPlaceholderText("Senha")
+        self.txt_senha.setPlaceholderText("digite sua senha")
 
         lbl_email = QLabel("E-mail / Usuário")
         lbl_email.setProperty("class", "lbl-box")
@@ -166,10 +212,9 @@ class UniversoView(QWidget):
 
         ly_esq.addWidget(gb_auth)
 
-        # 3. Pasta de Destino
         gb_destino = QGroupBox("📁 Pasta de Destino")
         ly_dest = QHBoxLayout(gb_destino)
-        ly_dest.setContentsMargins(10, 12, 10, 10)
+        ly_dest.setContentsMargins(10, 10, 10, 10)
         self.txt_destino = QLineEdit(os.path.join(os.path.expanduser("~"), "Downloads", "PRT_Nexus"))
         self.btn_alterar_dest = QPushButton("Alterar")
         self.btn_alterar_dest.setObjectName("btn_alterar")
@@ -178,50 +223,84 @@ class UniversoView(QWidget):
 
         ly_esq.addWidget(gb_destino)
 
-        # Adiciona coluna esquerda com proporção 1
         layout_top.addLayout(ly_esq, stretch=1)
 
-        # ================= COLUNA DIREITA =================
+        ly_dir = QVBoxLayout()
+        ly_dir.setSpacing(10)
+
         gb_org = QGroupBox("📁 Organização de Pastas (Curso / Playlist)")
         form_org = QFormLayout(gb_org)
-        form_org.setContentsMargins(10, 12, 10, 10)
+        form_org.setContentsMargins(10, 10, 10, 10)
         form_org.setSpacing(12)
 
         lbl_nome_cnt = QLabel("Nome do Conteúdo")
         lbl_nome_cnt.setProperty("class", "lbl-box")
         self.txt_nome_conteudo = QLineEdit("Universo Técnico - Curso Extraído")
-        
+
         lbl_est = QLabel("Estrutura")
         lbl_est.setProperty("class", "lbl-box")
-        self.txt_estrutura = QLineEdit("Organizado Automaticamente por Módulo")
-        self.txt_estrutura.setReadOnly(True)
+        self.cmb_estrutura = QComboBox()
+        self.cmb_estrutura.addItems([
+            "Organizado Automaticamente por Módulo",
+            "Todos os Vídeos na Mesma Pasta"
+        ])
 
         lbl_mid = QLabel("Mídias")
         lbl_mid.setProperty("class", "lbl-box")
-        self.txt_midias = QLineEdit("Extração Sequencial de Vídeos")
-        self.txt_midias.setReadOnly(True)
+        self.cmb_midias = QComboBox()
+        self.cmb_midias.addItems([
+            "Extração Sequencial de Vídeos (01 -, 02 -)",
+            "Manter Nome Original do Vídeo"
+        ])
 
         form_org.addRow(lbl_nome_cnt, self.txt_nome_conteudo)
-        form_org.addRow(lbl_est, self.txt_estrutura)
-        form_org.addRow(lbl_mid, self.txt_midias)
+        form_org.addRow(lbl_est, self.cmb_estrutura)
+        form_org.addRow(lbl_mid, self.cmb_midias)
 
-        # Adiciona coluna direita com proporção 1 (iguala a largura das duas colunas)
-        layout_top.addWidget(gb_org, stretch=1)
+        ly_dir.addWidget(gb_org)
 
+        gb_opcoes = QGroupBox("⚙️ Opções Extras de Extração")
+        ly_opcoes = QVBoxLayout(gb_opcoes)
+        ly_opcoes.setContentsMargins(12, 12, 12, 12)
+        ly_opcoes.setSpacing(10)
+
+        self.chk_anexos = QCheckBox("Baixar materiais anexos das aulas (PDFs, ZIPs, Apostilas)")
+        self.chk_anexos.setChecked(True)
+        self.chk_txt = QCheckBox("Gerar arquivo .txt com índice e descrição das aulas")
+        self.chk_notif = QCheckBox("Notificar com som ao concluir todos os downloads")
+
+        ly_opcoes.addWidget(self.chk_anexos)
+        ly_opcoes.addWidget(self.chk_txt)
+        ly_opcoes.addWidget(self.chk_notif)
+
+        ly_dir.addWidget(gb_opcoes)
+
+        layout_top.addLayout(ly_dir, stretch=1)
         layout_principal.addLayout(layout_top)
 
-        # ================= BARRA DE PROGRESSO GERAL =================
         ly_prog_geral = QHBoxLayout()
+
         self.lbl_status_global = QLabel("Aguardando link de download...")
         self.lbl_status_global.setStyleSheet("""
             background-color: #1e1e1e;
             border: 1px solid #3a3a3a;
-            border-radius: 4px;
+            border-radius: 8px;
             color: #aaaaaa;
             font-size: 11px;
-            padding: 5px 8px;
+            padding: 5px 10px;
         """)
-        
+
+        self.lbl_velocidade = QLabel("-- MiB/s | ETA: --:--")
+        self.lbl_velocidade.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_velocidade.setStyleSheet("""
+            background-color: #1e1e1e;
+            border: 1px solid #3a3a3a;
+            border-radius: 8px;
+            color: #aaaaaa;
+            font-size: 11px;
+            padding: 5px 10px;
+        """)
+
         self.pbar_global = QProgressBar()
         self.pbar_global.setRange(0, 100)
         self.pbar_global.setValue(0)
@@ -230,7 +309,7 @@ class UniversoView(QWidget):
         self.pbar_global.setStyleSheet("""
             QProgressBar {
                 border: 1px solid #3a3a3a;
-                border-radius: 4px;
+                border-radius: 8px;
                 text-align: center;
                 background-color: #1e1e1e;
                 color: #ffffff;
@@ -238,24 +317,64 @@ class UniversoView(QWidget):
             }
             QProgressBar::chunk {
                 background-color: #2ecc71;
+                border-radius: 6px;
             }
         """)
 
-        ly_prog_geral.addWidget(self.lbl_status_global, stretch=1)
-        ly_prog_geral.addWidget(self.pbar_global, stretch=2)
+        self.btn_pausar = QPushButton("⏸️ Pausar")
+        self.btn_pausar.setObjectName("btn_pausar")
+        self.btn_pausar.setEnabled(False)
+
+        self.btn_cancelar = QPushButton("⏹️ Cancelar")
+        self.btn_cancelar.setObjectName("btn_cancelar")
+        self.btn_cancelar.setEnabled(False)
+
+        ly_prog_geral.addWidget(self.lbl_status_global, stretch=2)
+        ly_prog_geral.addWidget(self.lbl_velocidade, stretch=1)
+        ly_prog_geral.addWidget(self.pbar_global, stretch=1)
+        ly_prog_geral.addWidget(self.btn_pausar)
+        ly_prog_geral.addWidget(self.btn_cancelar)
+
         layout_principal.addLayout(ly_prog_geral)
 
-        # ================= TABELA DE MÍDIAS =================
-        gb_tabela = QGroupBox("📦 Mídias Concluídas do Universo Técnico")
+        gb_tabela = QFrame()
+        gb_tabela.setObjectName("gb_tabela")
         ly_tab = QVBoxLayout(gb_tabela)
-        ly_tab.setContentsMargins(10, 12, 10, 10)
+        ly_tab.setContentsMargins(10, 8, 10, 8)
+        ly_tab.setSpacing(6)
+
+        ly_tab_top = QHBoxLayout()
+        ly_tab_top.setContentsMargins(0, 0, 0, 0)
+        ly_tab_top.setSpacing(8)
+
+        lbl_tab_title = QLabel("📦 Mídias Concluídas do Universo Técnico (Duplo clique para abrir a pasta)")
+        lbl_tab_title.setStyleSheet(
+            "font-size: 13px; font-weight: bold; color: #ffffff; background: transparent; border: none; padding: 0;"
+        )
+        lbl_tab_title.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        ly_tab_top.addWidget(lbl_tab_title, 1, Qt.AlignmentFlag.AlignVCenter)
+
+        self.btn_limpar = QPushButton("🗑️ Limpar Concluídos")
+        self.btn_limpar.setObjectName("btn_limpar")
+        ly_tab_top.addWidget(self.btn_limpar, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        ly_tab.addLayout(ly_tab_top)
 
         self.tabela = QTableWidget(0, 4)
+        self.tabela.verticalHeader().setVisible(False)
         self.tabela.setHorizontalHeaderLabels(["#", "Título / Nome do Arquivo", "Caminho Salvo", "Status"])
-        self.tabela.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.tabela.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        self.tabela.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
-        self.tabela.setColumnWidth(3, 110)
+        self.tabela.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        header = self.tabela.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
+        header.setStretchLastSection(True)
+
+        self.tabela.setColumnWidth(0, 45)
+        self.tabela.setColumnWidth(1, 300)
+        self.tabela.setColumnWidth(2, 400)
 
         self._configurar_estilo_tabela(self.tabela)
         ly_tab.addWidget(self.tabela)
@@ -269,7 +388,7 @@ class UniversoView(QWidget):
                 gridline-color: #3a3a3a;
                 background-color: #1a1a1a;
                 border: 1px solid #3a3a3a;
-                border-radius: 4px;
+                border-radius: 10px;
             }
             QTableWidget::item {
                 border: none;
@@ -283,7 +402,7 @@ class UniversoView(QWidget):
                 border-bottom: 1px solid #3a3a3a;
                 border-top: none;
                 border-left: none;
-                padding: 4px;
+                padding: 6px;
                 font-weight: bold;
             }
         """)
@@ -293,11 +412,58 @@ class UniversoView(QWidget):
         self.btn_avulso.clicked.connect(lambda: self._iniciar_download(modo_avulso=True))
         self.btn_curso.clicked.connect(lambda: self._iniciar_download(modo_avulso=False))
         self.btn_alterar_dest.clicked.connect(self._selecionar_pasta_destino)
+        self.btn_pausar.clicked.connect(self._toggle_pausar_resumir)
+        self.btn_cancelar.clicked.connect(self._cancelar_download)
+        self.btn_limpar.clicked.connect(self._limpar_concluidos)
+        self.tabela.itemDoubleClicked.connect(self._abrir_item_tabela)
 
     def _selecionar_pasta_destino(self):
         pasta = QFileDialog.getExistingDirectory(self, "Selecionar Pasta de Destino", self.txt_destino.text())
         if pasta:
             self.txt_destino.setText(pasta)
+
+    def _abrir_item_tabela(self, item):
+        row = item.row()
+        caminho_item = self.tabela.item(row, 2)
+        if caminho_item and caminho_item.text():
+            caminho = caminho_item.text()
+            if os.path.exists(caminho):
+                if os.path.isfile(caminho):
+                    caminho = os.path.dirname(caminho)
+                QDesktopServices.openUrl(QUrl.fromLocalFile(caminho))
+
+    def _toggle_pausar_resumir(self):
+        if not self.worker or not self.worker.isRunning():
+            return
+
+        if self.btn_pausar.text() == "⏸️ Pausar":
+            self.btn_pausar.setText("▶️ Retomar")
+            if hasattr(self.worker, "pausar"):
+                self.worker.pausar()
+        else:
+            self.btn_pausar.setText("⏸️ Pausar")
+            if hasattr(self.worker, "resumir"):
+                self.worker.resumir()
+
+    def _cancelar_download(self):
+        if self.worker and self.worker.isRunning():
+            self.worker.terminate()
+            self.worker.wait()
+            self.lbl_status_global.setText("Download cancelado pelo usuário.")
+            self.lbl_velocidade.setText("-- MiB/s | ETA: --:--")
+            self.pbar_global.setValue(0)
+
+            self.btn_avulso.setEnabled(True)
+            self.btn_curso.setEnabled(True)
+            self.btn_pausar.setEnabled(False)
+            self.btn_cancelar.setEnabled(False)
+            self.btn_pausar.setText("⏸️ Pausar")
+
+    def _limpar_concluidos(self):
+        for row in reversed(range(self.tabela.rowCount())):
+            pbar = self.tabela.cellWidget(row, 3)
+            if isinstance(pbar, QProgressBar) and pbar.value() >= 100:
+                self.tabela.removeRow(row)
 
     def _iniciar_download(self, modo_avulso):
         url = self.txt_url.text().strip()
@@ -314,6 +480,9 @@ class UniversoView(QWidget):
 
         self.btn_avulso.setEnabled(False)
         self.btn_curso.setEnabled(False)
+        self.btn_pausar.setEnabled(True)
+        self.btn_cancelar.setEnabled(True)
+        self.btn_pausar.setText("⏸️ Pausar")
 
         self.worker = UniversoWorker(url, email, senha, destino, modo_avulso=modo_avulso)
         self.worker.progresso.connect(self._on_progresso)
@@ -334,7 +503,7 @@ class UniversoView(QWidget):
         pbar.setStyleSheet("""
             QProgressBar {
                 border: 1px solid #3a3a3a;
-                border-radius: 4px;
+                border-radius: 6px;
                 text-align: center;
                 background-color: #1e1e1e;
                 color: #ffffff;
@@ -343,7 +512,7 @@ class UniversoView(QWidget):
             }
             QProgressBar::chunk {
                 background-color: #2ecc71;
-                border-radius: 3px;
+                border-radius: 4px;
             }
         """)
         return pbar
@@ -363,8 +532,8 @@ class UniversoView(QWidget):
         caminho = str(item.get("caminho", ""))
         status = str(item.get("status", ""))
 
-        titulo_exibicao = re.sub(r'^\d+[\s\-_]*', '', titulo_bruto)
-        titulo_exibicao = re.sub(r'^[\s\-_]+', '', titulo_exibicao).replace('_', ' ').strip()
+        titulo_exibicao = re.sub(r"^\d+[\s\-_]*", "", titulo_bruto)
+        titulo_exibicao = re.sub(r"^[\s\-_]+", "", titulo_exibicao).replace("_", " ").strip()
 
         linha_existente = -1
         for row in range(self.tabela.rowCount()):
@@ -385,7 +554,7 @@ class UniversoView(QWidget):
                     pbar.setStyleSheet("""
                         QProgressBar {
                             border: 1px solid #3a3a3a;
-                            border-radius: 4px;
+                            border-radius: 6px;
                             text-align: center;
                             background-color: #1e1e1e;
                             color: #ffffff;
@@ -394,7 +563,7 @@ class UniversoView(QWidget):
                         }
                         QProgressBar::chunk {
                             background-color: #e74c3c;
-                            border-radius: 3px;
+                            border-radius: 4px;
                         }
                     """)
         else:
@@ -422,6 +591,12 @@ class UniversoView(QWidget):
     def _on_concluido(self, sucesso, mensagem):
         self.btn_avulso.setEnabled(True)
         self.btn_curso.setEnabled(True)
+        self.btn_pausar.setEnabled(False)
+        self.btn_cancelar.setEnabled(False)
+
+        if self.chk_notif.isChecked():
+            from PySide6.QtWidgets import QApplication
+            QApplication.beep()
 
         if sucesso:
             QMessageBox.information(self, "Universo Técnico", mensagem)
