@@ -5,7 +5,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QGroupBox, QLineEdit, 
     QComboBox, QPushButton, QMessageBox, QTableWidget, QTableWidgetItem, QProgressBar, 
-    QHeaderView, QFileDialog, QCheckBox
+    QHeaderView, QFileDialog, QCheckBox, QFrame
 )
 from services.extractors.chip7_connector import Chip7Worker
 
@@ -52,11 +52,10 @@ class Chip7View(QWidget):
                 background-color: #121212; /* Mesma cor do fundo para recortar a linha de forma limpa */
                 color: #ffffff;
             }
-
-            /* Grupo da Tabela sem margem superior extra */
-            QGroupBox#gb_tabela {
-                margin-top: 0px;
-                padding-top: 6px;
+            QFrame#gb_tabela {
+                background-color: #252526;
+                border: 1px solid #3c3c3c;
+                border-radius: 12px;
             }
 
             QLineEdit, QComboBox {
@@ -148,11 +147,9 @@ class Chip7View(QWidget):
 
         # Cabeçalho Principal (Mantida a fonte de 22px)
         lbl_titulo = QLabel("Conector Chip 7")
-        lbl_titulo.setStyleSheet("font-size: 22px; font-weight: bold; color: #ffffff;")
-        
+        lbl_titulo.setStyleSheet("font-size: 24px; font-weight: bold; color: #ffffff;")
         lbl_sub = QLabel("Capture, extraia e gerencie conteúdos diretamente do Chip 7.")
-        lbl_sub.setStyleSheet("font-size: 12px; color: #aaaaaa;")
-        
+        lbl_sub.setStyleSheet("font-size: 14px; color: #888888;")
         layout_principal.addWidget(lbl_titulo)
         layout_principal.addWidget(lbl_sub)
 
@@ -354,23 +351,27 @@ class Chip7View(QWidget):
         layout_principal.addLayout(ly_prog_geral)
 
         # ================= TABELA DE MÍDIAS =================
-        gb_tabela = QGroupBox()
+        gb_tabela = QFrame()
         gb_tabela.setObjectName("gb_tabela")
         ly_tab = QVBoxLayout(gb_tabela)
-        ly_tab.setContentsMargins(12, 6, 12, 10)
-        ly_tab.setSpacing(8)
+        ly_tab.setContentsMargins(10, 8, 10, 8)
+        ly_tab.setSpacing(6)
 
         # Cabeçalho Horizontal
         ly_tab_top = QHBoxLayout()
-        lbl_tabela_titulo = QLabel("📦 Mídias Concluídas do Chip 7 (Duplo clique para abrir a pasta)")
-        lbl_tabela_titulo.setStyleSheet("font-size: 12px; font-weight: bold; color: #ffffff;")
+        ly_tab_top.setContentsMargins(0, 0, 0, 0)
+        ly_tab_top.setSpacing(8)
+
+        lbl_tab_title = QLabel("📦 Mídias Concluídas do Chip 7 (Duplo clique para abrir a pasta)")
+        lbl_tab_title.setStyleSheet(
+            "font-weight: bold; color: #ffffff; background: transparent; border: none; padding: 0;"
+        )
+        lbl_tab_title.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        ly_tab_top.addWidget(lbl_tab_title, 1, Qt.AlignmentFlag.AlignVCenter)
 
         self.btn_limpar = QPushButton("🗑️ Limpar Concluídos")
         self.btn_limpar.setObjectName("btn_limpar")
-
-        ly_tab_top.addWidget(lbl_tabela_titulo)
-        ly_tab_top.addStretch()
-        ly_tab_top.addWidget(self.btn_limpar)
+        ly_tab_top.addWidget(self.btn_limpar, 0, Qt.AlignmentFlag.AlignVCenter)
 
         ly_tab.addLayout(ly_tab_top)
 
