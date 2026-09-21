@@ -25,7 +25,7 @@ class Chip7View(QWidget):
         self.setStyleSheet("""
             /* Fundo principal da janela */
             QWidget {
-                background-color: #121212;
+                background-color: #1e1e1e;
                 color: #ffffff;
             }
 
@@ -34,26 +34,26 @@ class Chip7View(QWidget):
                 background-color: #1e1e1e;
                 border: 1px solid #333333;
                 border-radius: 8px;
-                margin-top: 12px;     /* Espaço justo no topo para a linha da borda */
-                padding-top: 14px;    /* Espaço interno para o conteúdo */
+                margin-top: 4px;
+                padding-top: 22px;
                 padding-bottom: 8px;
                 font-size: 13px;
                 font-weight: bold;
                 color: #ffffff;
             }
 
-            /* Título cravado no meio da linha superior da borda */
+            /* Título dentro do card, abaixo da borda */
             QGroupBox::title {
-                subcontrol-origin: margin;
+                subcontrol-origin: padding;
                 subcontrol-position: top left;
                 left: 10px;
-                top: 2px;             /* Desce o texto para cruzar exatamente a linha da borda */
-                padding: 0 6px;       /* Cria o recorte na linha atrás do texto */
-                background-color: #121212; /* Mesma cor do fundo para recortar a linha de forma limpa */
+                top: 6px;
+                padding: 0 4px;
+                background-color: transparent;
                 color: #ffffff;
             }
             QFrame#gb_tabela {
-                background-color: #252526;
+                background-color: #1e1e1e;
                 border: 1px solid #3c3c3c;
                 border-radius: 12px;
             }
@@ -364,7 +364,7 @@ class Chip7View(QWidget):
 
         lbl_tab_title = QLabel("📦 Mídias Concluídas do Chip 7 (Duplo clique para abrir a pasta)")
         lbl_tab_title.setStyleSheet(
-            "font-weight: bold; color: #ffffff; background: transparent; border: none; padding: 0;"
+            "font-size: 13px; font-weight: bold; color: #ffffff; background: transparent; border: none; padding: 0;"
         )
         lbl_tab_title.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
         ly_tab_top.addWidget(lbl_tab_title, 1, Qt.AlignmentFlag.AlignVCenter)
