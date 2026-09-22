@@ -484,8 +484,10 @@ class UniversoView(QWidget):
         self.btn_cancelar.setEnabled(True)
         self.btn_pausar.setText("⏸️ Pausar")
 
+        self.lbl_velocidade.setText("-- MiB/s | ETA: --:--")
         self.worker = UniversoWorker(url, email, senha, destino, modo_avulso=modo_avulso)
         self.worker.progresso.connect(self._on_progresso)
+        self.worker.velocidade.connect(self._on_velocidade)
         self.worker.item_progresso.connect(self._on_item_progresso)
         self.worker.item_concluido.connect(self._on_item_concluido)
         self.worker.concluido.connect(self._on_concluido)
@@ -494,6 +496,9 @@ class UniversoView(QWidget):
     def _on_progresso(self, msg, pct):
         self.pbar_global.setValue(pct)
         self.lbl_status_global.setText(msg)
+
+    def _on_velocidade(self, texto):
+        self.lbl_velocidade.setText(texto)
 
     def _criar_barra_status(self):
         pbar = QProgressBar()
