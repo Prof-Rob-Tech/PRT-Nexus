@@ -24,108 +24,267 @@ class UniversoWorker(QThread):
             self.progresso.emit("Iniciando navegador...", 5)
 
             with sync_playwright() as p:
-                browser = p.chromium.launch(
-                    headless=False,
-                    args=["--autoplay-policy=user-gesture-required", "--mute-audio", "--no-sandbox"]
-                )
-                context = browser.new_context(viewport={"width": 1280, "height": 720})
+                context = self._criar_contexto(p)
                 page = context.new_page()
-
-                # 1. Login
-                self.progresso.emit("Acessando portal Universo Técnico...", 10)
-                page.goto("https://universotecnico.com/login", wait_until="domcontentloaded", timeout=300000)
-                page.wait_for_timeout(2000)
-
-                campo_email = page.locator("input[type='email'], input[name='email'], input[name='username']").first
-                campo_senha = page.locator("input[type='password']").first
-
-                if campo_email.is_visible():
-                    campo_email.fill(self.email)
-                    campo_senha.fill(self.senha)
-                    page.wait_for_timeout(300)
-                    campo_senha.press("Enter")
-                    page.wait_for_timeout(4000)
-
-                # 2. Navegação
-                self.progresso.emit("Acessando área do curso...", 30)
-                page.goto(self.url_curso, wait_until="domcontentloaded", timeout=300000)
-                page.wait_for_timeout(4000)
-
-                pasta_curso = os.path.join(self.pasta_destino, "Universo Técnico - Curso Extraído")
-                os.makedirs(pasta_curso, exist_ok=True)
-
-                # 3. Mapeamento
-                self.progresso.emit("Mapeando lista de aulas...", 45)
-                if self.modo_avulso:
-                    aulas_mapeadas = [{"titulo": "Aula_Avulsa", "elemento": None}]
-                else:
-                    elementos = page.locator("a[href*='aula'], li a, .lesson-item").all()
-                    aulas_mapeadas = []
-                    for elem in elementos:
-                        try:
-                            txt = elem.text_content().strip()
-                            if txt and len(txt) > 2 and txt not in [a["titulo"] for a in aulas_mapeadas]:
-                                aulas_mapeadas.append({"titulo": txt, "elemento": elem})
-                        except Exception:
-                            pass
-
-                if not aulas_mapeadas:
-                    aulas_mapeadas = [{"titulo": "Aula_01", "elemento": None}]
-
-                total_aulas = len(aulas_mapeadas)
-                videos_baixados = 0
-
-                # 4. Download individual com emissão imediata
-                for idx, aula in enumerate(aulas_mapeadas, 1):
-                    nome_aula = self._limpar_nome(aula["titulo"])
-                    nome_arquivo = f"{idx:02d} - {nome_aula}" if not self.modo_avulso else nome_aula
-                    caminho_previsto = os.path.join(pasta_curso, f"{nome_arquivo}.mp4")
-
-                    if not self.modo_avulso and aula["elemento"]:
-                        try:
-                            aula["elemento"].click(force=True)
-                            page.wait_for_timeout(2500)
-                        except Exception:
-                            pass
-
-                    vimeo_url = self._capturar_vimeo_atual(page)
-                    num_str = str(idx)
-
-                    if vimeo_url:
-                        videos_baixados += 1
-
-                        # Adiciona na tabela IMEDIATAMENTE antes de começar o download
-                        self.item_concluido.emit({
-                            "num": num_str,
-                            "titulo": nome_arquivo,
-                            "caminho": caminho_previsto,
-                            "status": "Baixando..."
-                        })
-
-                        caminho_final = self._baixar_com_ytdlp(
-                            vimeo_url, pasta_curso, nome_arquivo, idx, total_aulas, nome_aula, num_str
+                try:
+                    page = self._entrar_no_portal(page, context)
+                    if self._precisa_login_wordpress(page) and not self._esta_logado(context):
+                        self.concluido.emit(
+                            False,
+                            "Não foi possível entrar no WordPress. Confira o login e tente de novo.",
                         )
+                        return
 
-                        status_final = "Concluído" if (caminho_final and os.path.exists(caminho_final)) else "Erro"
+                    self.progresso.emit("Acessando área do curso...", 30)
+                    page.goto(self.url_curso, wait_until="domcontentloaded", timeout=300000)
+                    page.wait_for_timeout(3000)
+                    if self._precisa_login_wordpress(page) and not self._esta_logado(context):
+                        self.concluido.emit(False, "A área do curso ainda pediu login. O mapeamento foi interrompido.")
+                        return
 
-                        self.item_concluido.emit({
-                            "num": num_str,
-                            "titulo": nome_arquivo,
-                            "caminho": caminho_previsto,
-                            "status": status_final
-                        })
+                    pasta_curso = os.path.join(self.pasta_destino, "Universo Técnico - Curso Extraído")
+                    os.makedirs(pasta_curso, exist_ok=True)
 
-                browser.close()
+                    self.progresso.emit("Mapeando lista de aulas...", 45)
+                    if self.modo_avulso:
+                        aulas_mapeadas = [{"titulo": "Aula_Avulsa", "href": None}]
+                    else:
+                        aulas_mapeadas = self._mapear_aulas(page)
 
-                if videos_baixados == 0:
-                    self.concluido.emit(False, "Nenhum vídeo foi localizado na página.")
-                    return
+                    if not aulas_mapeadas:
+                        vimeo_na_pagina = self._capturar_vimeo_atual(page)
+                        if vimeo_na_pagina:
+                            aulas_mapeadas = [{"titulo": "Aula_Avulsa", "href": None}]
+                        else:
+                            self.concluido.emit(False, "Nenhuma aula foi encontrada na página do curso.")
+                            return
 
-                self.progresso.emit("Downloads concluídos!", 100)
-                self.concluido.emit(True, f"{videos_baixados} vídeo(s) baixado(s) com sucesso!")
+                    total_aulas = len(aulas_mapeadas)
+                    videos_baixados = 0
+
+                    for idx, aula in enumerate(aulas_mapeadas, 1):
+                        nome_aula = self._limpar_nome(aula["titulo"])
+                        nome_arquivo = f"{idx:02d} - {nome_aula}" if not self.modo_avulso else nome_aula
+                        caminho_previsto = os.path.join(pasta_curso, f"{nome_arquivo}.mp4")
+
+                        if not self.modo_avulso and aula.get("href"):
+                            try:
+                                page.goto(aula["href"], wait_until="domcontentloaded", timeout=300000)
+                                page.wait_for_timeout(2500)
+                            except Exception:
+                                pass
+
+                        pagina_atual = self._pagina_ativa(context, page)
+                        vimeo_url = self._capturar_vimeo_atual(pagina_atual)
+                        num_str = str(idx)
+
+                        if vimeo_url:
+                            videos_baixados += 1
+                            self.item_concluido.emit({
+                                "num": num_str,
+                                "titulo": nome_arquivo,
+                                "caminho": caminho_previsto,
+                                "status": "Baixando..."
+                            })
+
+                            caminho_final = self._baixar_com_ytdlp(
+                                vimeo_url, pasta_curso, nome_arquivo, idx, total_aulas, nome_aula, num_str
+                            )
+
+                            status_final = "Concluído" if (caminho_final and os.path.exists(caminho_final)) else "Erro"
+                            self.item_concluido.emit({
+                                "num": num_str,
+                                "titulo": nome_arquivo,
+                                "caminho": caminho_previsto,
+                                "status": status_final
+                            })
+
+                    if videos_baixados == 0:
+                        self.concluido.emit(False, "Nenhum vídeo foi localizado na página.")
+                        return
+
+                    self.progresso.emit("Downloads concluídos!", 100)
+                    self.concluido.emit(True, f"{videos_baixados} vídeo(s) baixado(s) com sucesso!")
+                finally:
+                    context.close()
+                    if getattr(self, "_browser", None):
+                        self._browser.close()
+                        self._browser = None
 
         except Exception as e:
             self.concluido.emit(False, f"Erro: {str(e)}")
+
+    def _criar_contexto(self, p):
+        args = [
+            "--autoplay-policy=user-gesture-required",
+            "--mute-audio",
+            "--disable-blink-features=AutomationControlled",
+        ]
+        try:
+            self._browser = p.chromium.launch(channel="chrome", headless=False, args=args)
+        except Exception:
+            self._browser = p.chromium.launch(headless=False, args=args)
+        return self._browser.new_context(
+            viewport={"width": 1280, "height": 720},
+            locale="pt-BR",
+            timezone_id="America/Sao_Paulo",
+        )
+
+    def _seletor_usuario(self):
+        return "#user_login, input[name='log'], #username, input[name='username'], input[name='email'], input[type='email']"
+
+    def _seletor_senha(self):
+        return "#user_pass, input[name='pwd'], #password, input[name='password'], input[type='password']"
+
+    def _campos_login_visiveis(self, page):
+        return page.locator(self._seletor_usuario()).filter(visible=True)
+
+    def _tem_formulario_login(self, page):
+        try:
+            return self._campos_login_visiveis(page).count() > 0
+        except Exception:
+            return False
+
+    def _tem_cookie_teste(self, context):
+        try:
+            return any(c.get("name") == "wordpress_test_cookie" for c in context.cookies())
+        except Exception:
+            return False
+
+    def _pagina_com_erro_cookie(self, page):
+        try:
+            texto = (page.inner_text("body") or "").lower()
+            return "cookies" in texto and ("bloqueia" in texto or "ativar os cookies" in texto)
+        except Exception:
+            return False
+
+    def _esta_logado(self, context):
+        try:
+            return any(
+                str(c.get("name", "")).startswith("wordpress_logged_in_")
+                for c in context.cookies()
+            )
+        except Exception:
+            return False
+
+    def _injetar_cookie_teste(self, context, page):
+        try:
+            page.evaluate(
+                "document.cookie = 'wordpress_test_cookie=WP Cookie check; path=/; SameSite=Lax'"
+            )
+        except Exception:
+            pass
+        try:
+            context.add_cookies([
+                {
+                    "name": "wordpress_test_cookie",
+                    "value": "WP Cookie check",
+                    "url": "https://universotecnico.com/wp-login.php",
+                    "path": "/",
+                    "secure": True,
+                    "sameSite": "Lax",
+                }
+            ])
+        except Exception:
+            pass
+
+    def _precisa_login_wordpress(self, page):
+        try:
+            return page.locator("#user_login").filter(visible=True).count() > 0
+        except Exception:
+            return False
+
+    def _aba_apos_login(self, context, page):
+        for p in context.pages:
+            if p.is_closed():
+                continue
+            url = p.url or ""
+            if "wp-login.php" not in url and not url.startswith("chrome://") and url != "about:blank":
+                return p
+        return page
+
+    def _fechar_abas_de_login(self, context, page_atual):
+        for p in list(context.pages):
+            if p is page_atual or p.is_closed():
+                continue
+            if "wp-login.php" in (p.url or ""):
+                try:
+                    p.close()
+                except Exception:
+                    pass
+
+    def _abrir_wp_login(self, page, context):
+        page.goto("https://universotecnico.com/wp-login.php", wait_until="domcontentloaded", timeout=300000)
+        page.wait_for_timeout(1500)
+        self._injetar_cookie_teste(context, page)
+        page.wait_for_timeout(300)
+
+    def _entrar_no_portal(self, page, context):
+        self.progresso.emit("Acessando portal Universo Técnico...", 10)
+        self._abrir_wp_login(page, context)
+        self._fazer_login_wordpress(page)
+        page.wait_for_timeout(3000)
+
+        page = self._aba_apos_login(context, page)
+        self._fechar_abas_de_login(context, page)
+        return page
+
+    def _fazer_login_wordpress(self, page):
+        campo_usuario = page.locator("#user_login")
+        campo_senha = page.locator("#user_pass")
+        campo_usuario.wait_for(state="visible", timeout=20000)
+
+        campo_usuario.click()
+        campo_usuario.fill("")
+        campo_usuario.fill(self.email)
+        campo_senha.click()
+        campo_senha.fill("")
+        campo_senha.fill(self.senha)
+        page.wait_for_timeout(400)
+        page.locator("#wp-submit").click()
+        page.wait_for_timeout(4000)
+
+    def _pagina_ativa(self, context, page):
+        abertas = [p for p in context.pages if not p.is_closed()]
+        return abertas[-1] if abertas else page
+
+    def _mapear_aulas(self, page):
+        seletores = [
+            "a.ld-item-name",
+            ".ld-table-list-item a",
+            ".learndash-wrapper a[href*='/lessons/']",
+            ".learndash-wrapper a[href*='/topic/']",
+            ".llms-lesson-preview a",
+            ".tutor-course-content-list-item a",
+            "a[href*='/lessons/']",
+            "a[href*='/lesson/']",
+            "a[href*='/topico']",
+            "a[href*='/aula']",
+        ]
+        aulas = []
+        hrefs_vistos = set()
+        bloqueados = ("wp-login.php", "minha-conta", "wp-admin", "logout", "cadastr")
+
+        for seletor in seletores:
+            for link in page.locator(seletor).all():
+                try:
+                    href = (link.get_attribute("href") or "").strip()
+                    titulo = (link.text_content() or "").strip()
+                    if not href or href.startswith("#") or href.startswith("javascript:"):
+                        continue
+                    if any(b in href.lower() for b in bloqueados):
+                        continue
+                    if href in hrefs_vistos:
+                        continue
+                    if not titulo or len(titulo) < 3:
+                        continue
+                    hrefs_vistos.add(href)
+                    aulas.append({"titulo": titulo, "href": href})
+                except Exception:
+                    continue
+            if aulas:
+                break
+        return aulas
 
     def _capturar_vimeo_atual(self, page):
         try:
