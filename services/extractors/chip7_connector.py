@@ -19,6 +19,10 @@ except ImportError:
     from services.chip7_mapper import Chip7Mapper
 
 
+class DownloadCancelado(Exception):
+    pass
+
+
 class Chip7Worker(QThread):
     progresso = Signal(str, int)
     velocidade = Signal(str)
@@ -48,6 +52,7 @@ class Chip7Worker(QThread):
         self.modo_avulso = modo_avulso
         self.opcoes = opcoes or {}
         self.relatorio_txt = []
+        self._cancelado = False
 
     def extrair_url_video(self, driver):
         """Busca URLs de player em iframes, tags video ou scripts da página."""
@@ -178,6 +183,19 @@ class Chip7Worker(QThread):
 
         return "FACE ID 3.0"
 
+    def _destino_da_aula(self, nome_curso, num_mod, titulo_mod, num_aula, titulo_aula, indice_global):
+        """Aplica estrutura e numeração escolhidas na tela."""
+        estrutura = self.opcoes.get("estrutura") or ""
+        midias = self.opcoes.get("midias") or ""
+        por_modulo = "Mesma Pasta" not in estrutura
+        sequencial = "Original" not in midias
+
+        pasta_curso = os.path.join(self.destino, f"01 - {nome_curso}")
+        pasta = os.path.join(pasta_curso, f"{num_mod:02d} - {titulo_mod}") if por_modulo else pasta_curso
+        numero = num_aula if por_modulo else indice_global
+        nome_arquivo = f"{numero:02d} - {titulo_aula}" if sequencial else titulo_aula
+        return pasta, nome_arquivo
+
     def run(self):
         driver = None
         try:
@@ -247,27 +265,37 @@ class Chip7Worker(QThread):
 
             # 3. Processamento e Downloads
             for modulo in estrutura_curso:
+                if self._cancelado:
+                    break
                 self._checar_pausa()
+                if self._cancelado:
+                    break
                 
                 nome_curso_limpo = self._resolver_nome_curso(mapper, modulo)
                 titulo_mod_limpo = mapper.limpar_nome(modulo['titulo_mod'])
-
-                pasta_curso = os.path.join(self.destino, f"01 - {nome_curso_limpo}")
-                nome_pasta_modulo = f"{modulo['num_mod']:02d} - {titulo_mod_limpo}"
-                caminho_pasta_modulo = os.path.join(pasta_curso, nome_pasta_modulo)
-                
-                os.makedirs(caminho_pasta_modulo, exist_ok=True)
                 
                 for aula in modulo["aulas"]:
+                    if self._cancelado:
+                        break
                     self._checar_pausa()
+                    if self._cancelado:
+                        break
                     aulas_processadas += 1
                     id_tabela = f"{aulas_processadas}"
                         
                     titulo_aula_limpo = mapper.limpar_nome(aula['titulo'], titulo_modulo=titulo_mod_limpo)
-                    nome_base_arquivo = f"{aula['num_aula']:02d} - {titulo_aula_limpo}"
+                    pasta_aula, nome_base_arquivo = self._destino_da_aula(
+                        nome_curso_limpo,
+                        modulo["num_mod"],
+                        titulo_mod_limpo,
+                        aula["num_aula"],
+                        titulo_aula_limpo,
+                        aulas_processadas,
+                    )
+                    os.makedirs(pasta_aula, exist_ok=True)
                         
-                    caminho_template_ytdlp = os.path.join(caminho_pasta_modulo, f"{nome_base_arquivo}.%(ext)s")
-                    caminho_esperado_mp4 = os.path.join(caminho_pasta_modulo, f"{nome_base_arquivo}.mp4")
+                    caminho_template_ytdlp = os.path.join(pasta_aula, f"{nome_base_arquivo}.%(ext)s")
+                    caminho_esperado_mp4 = os.path.join(pasta_aula, f"{nome_base_arquivo}.mp4")
 
                     self.item_concluido.emit({
                         "num": id_tabela,
@@ -320,7 +348,7 @@ class Chip7Worker(QThread):
                     except Exception:
                         pass
 
-                    self._baixar_anexos_aula(driver, caminho_pasta_modulo)
+                    self._baixar_anexos_aula(driver, pasta_aula)
                     self._coletar_descricao_aula(
                         driver, 
                         modulo['num_mod'], 
@@ -344,6 +372,8 @@ class Chip7Worker(QThread):
                     ultima_atualizacao = [0]
 
                     def hook_download(d):
+                        if self._cancelado:
+                            raise DownloadCancelado()
                         if d['status'] == 'downloading':
                             percent_str = d.get('_percent_str', '0.0%')
                             percent_limpo = re.sub(r'\x1b\[[0-9;]*m', '', percent_str).strip()
@@ -376,6 +406,11 @@ class Chip7Worker(QThread):
                                     self.velocidade.emit(texto_velocidade)
                                     
                         self._checar_pausa()
+                        if self._cancelado:
+                            raise DownloadCancelado()
+
+                    if self._cancelado:
+                        break
 
                     if yt_dlp:
                         ydl_opts = {
@@ -394,8 +429,17 @@ class Chip7Worker(QThread):
                         try:
                             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                                 ydl.download([video_url])
+                        except DownloadCancelado:
+                            self._cancelado = True
                         except Exception as err:
-                            print(f"Erro no download yt_dlp para aula '{titulo_aula_limpo}': {err}")
+                            causa = getattr(err, "__cause__", None)
+                            if self._cancelado or isinstance(causa, DownloadCancelado):
+                                self._cancelado = True
+                            else:
+                                print(f"Erro no download yt_dlp para aula '{titulo_aula_limpo}': {err}")
+
+                    if self._cancelado:
+                        break
 
                     self.item_progresso.emit(id_tabela, 100)
                     self.item_concluido.emit({
@@ -404,6 +448,12 @@ class Chip7Worker(QThread):
                         "caminho": caminho_esperado_mp4,
                         "status": "Concluído"
                     })
+                if self._cancelado:
+                    break
+
+            if self._cancelado:
+                self.velocidade.emit("-- MiB/s | ETA: --:--")
+                return
 
             if self.opcoes.get("gerar_txt", False) and self.relatorio_txt:
                 caminho_txt = os.path.join(self.destino, "indice_e_descricao_curso.txt")
@@ -427,6 +477,7 @@ class Chip7Worker(QThread):
         self._mutex.lock()
         self._pausado = True
         self._mutex.unlock()
+        self.velocidade.emit("PAUSADO | ETA: --:--")
 
     def resumir(self):
         self._mutex.lock()
@@ -434,9 +485,16 @@ class Chip7Worker(QThread):
         self._condicao.wakeAll()
         self._mutex.unlock()
 
+    def cancelar(self):
+        self._cancelado = True
+        self._mutex.lock()
+        self._pausado = False
+        self._condicao.wakeAll()
+        self._mutex.unlock()
+
     def _checar_pausa(self):
         self._mutex.lock()
-        while self._pausado:
+        while self._pausado and not self._cancelado:
             self.velocidade.emit("PAUSADO | ETA: --:--")
             self._condicao.wait(self._mutex)
         self._mutex.unlock()

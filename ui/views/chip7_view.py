@@ -461,11 +461,14 @@ class Chip7View(QWidget):
 
     def _cancelar_download(self):
         if self.worker and self.worker.isRunning():
+            if hasattr(self.worker, "cancelar"):
+                self.worker.cancelar()
             self.worker.terminate()
             self.worker.wait()
             self.lbl_status_global.setText("Download cancelado pelo usuário.")
             self.lbl_velocidade.setText("-- MiB/s | ETA: --:--")
             self.pbar_global.setValue(0)
+            self._remover_linhas_incompletas()
 
             self.btn_avulso.setEnabled(True)
             self.btn_curso.setEnabled(True)
@@ -474,9 +477,18 @@ class Chip7View(QWidget):
             self.btn_pausar.setText("⏸️ Pausar")
 
     def _limpar_concluidos(self):
+        em_andamento = bool(self.worker and self.worker.isRunning())
         for row in reversed(range(self.tabela.rowCount())):
             pbar = self.tabela.cellWidget(row, 3)
-            if isinstance(pbar, QProgressBar) and pbar.value() >= 100:
+            if not isinstance(pbar, QProgressBar):
+                continue
+            if pbar.value() >= 100 or not em_andamento:
+                self.tabela.removeRow(row)
+
+    def _remover_linhas_incompletas(self):
+        for row in reversed(range(self.tabela.rowCount())):
+            pbar = self.tabela.cellWidget(row, 3)
+            if isinstance(pbar, QProgressBar) and pbar.value() < 100:
                 self.tabela.removeRow(row)
 
     def _iniciar_download(self, modo_avulso):
