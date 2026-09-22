@@ -1,7 +1,8 @@
+import ctypes
 import os
 import subprocess
 import re
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QMutex, QThread, QWaitCondition, Signal
 
 class UniversoWorker(QThread):
     progresso = Signal(str, int)
@@ -10,14 +11,19 @@ class UniversoWorker(QThread):
     concluido = Signal(bool, str)
     velocidade = Signal(str)
 
-    def __init__(self, url_curso, email, senha, pasta_destino, modo_avulso=False):
+    def __init__(self, url_curso, email, senha, pasta_destino, modo_avulso=False, opcoes=None):
         super().__init__()
         self.url_curso = url_curso.strip()
         self.email = email.strip()
         self.senha = senha.strip()
         self.pasta_destino = pasta_destino.strip() if pasta_destino else os.path.join(os.path.expanduser("~"), "Downloads", "PRT_Nexus")
         self.modo_avulso = modo_avulso
+        self.opcoes = opcoes or {}
         self._erro_login = ""
+        self._pausado = False
+        self._mutex = QMutex()
+        self._condicao = QWaitCondition()
+        self._processo = None
 
     def run(self):
         try:
@@ -79,6 +85,7 @@ class UniversoWorker(QThread):
                     videos_baixados = 0
 
                     for idx, aula in enumerate(aulas_mapeadas, 1):
+                        self._checar_pausa()
                         nome_aula = aula["titulo"]
                         nome_arquivo = aula["nome_arquivo"]
                         pasta_aula = aula["pasta"]
@@ -317,21 +324,31 @@ class UniversoWorker(QThread):
         return abertas[-1] if abertas else page
 
     def _montar_aulas_em_pastas(self, page):
-        """Curso na raiz, uma pasta por módulo e aulas numeradas dentro do módulo."""
+        """Aplica nome, estrutura e numeração escolhidos na tela."""
         curso = self._mapear_curso(page)
-        nome_curso = self._limpar_nome(curso.get("tituloCurso") or "Curso")
+        nome_digitado = (self.opcoes.get("nome_conteudo") or "").strip()
+        nome_curso = self._limpar_nome(nome_digitado or curso.get("tituloCurso") or "Curso")
         pasta_curso = os.path.join(self.pasta_destino, f"01 - {nome_curso}")
-        aulas_mapeadas = []
 
+        estrutura = self.opcoes.get("estrutura") or ""
+        midias = self.opcoes.get("midias") or ""
+        por_modulo = "Mesma Pasta" not in estrutura
+        sequencial = "Original" not in midias
+
+        aulas_mapeadas = []
+        indice_global = 0
         for indice_mod, modulo in enumerate(curso.get("modulos") or [], 1):
             nome_mod = self._limpar_nome(modulo.get("titulo") or f"Modulo {indice_mod}")
-            pasta_mod = os.path.join(pasta_curso, f"{indice_mod:02d} - {nome_mod}")
+            pasta_mod = os.path.join(pasta_curso, f"{indice_mod:02d} - {nome_mod}") if por_modulo else pasta_curso
             for indice_aula, aula in enumerate(modulo.get("aulas") or [], 1):
+                indice_global += 1
                 nome_aula = self._limpar_nome(aula.get("titulo") or f"Aula {indice_aula}")
+                numero = indice_aula if por_modulo else indice_global
+                nome_arquivo = f"{numero:02d} - {nome_aula}" if sequencial else nome_aula
                 aulas_mapeadas.append({
                     "titulo": nome_aula,
                     "href": aula.get("href"),
-                    "nome_arquivo": f"{indice_aula:02d} - {nome_aula}",
+                    "nome_arquivo": nome_arquivo,
                     "pasta": pasta_mod,
                 })
 
@@ -430,6 +447,47 @@ class UniversoWorker(QThread):
         texto_limpo = re.sub(r'[\\/*?:"<>|]', "", texto)
         return re.sub(r'\s+', ' ', texto_limpo).strip()
 
+    def pausar(self):
+        self._mutex.lock()
+        self._pausado = True
+        self._mutex.unlock()
+        self._suspender_processo(True)
+        self.velocidade.emit("PAUSADO | ETA: --:--")
+
+    def resumir(self):
+        self._suspender_processo(False)
+        self._mutex.lock()
+        self._pausado = False
+        self._condicao.wakeAll()
+        self._mutex.unlock()
+
+    def cancelar(self):
+        processo = self._processo
+        if processo and processo.poll() is None:
+            processo.kill()
+
+    def _checar_pausa(self):
+        self._mutex.lock()
+        while self._pausado:
+            self.velocidade.emit("PAUSADO | ETA: --:--")
+            self._condicao.wait(self._mutex)
+        self._mutex.unlock()
+
+    def _suspender_processo(self, suspender):
+        processo = self._processo
+        if not processo or processo.poll() is not None or os.name != "nt":
+            return
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        ntdll = ctypes.WinDLL("ntdll")
+        handle = kernel32.OpenProcess(0x0800, False, processo.pid)
+        if not handle:
+            return
+        if suspender:
+            ntdll.NtSuspendProcess(handle)
+        else:
+            ntdll.NtResumeProcess(handle)
+        kernel32.CloseHandle(handle)
+
     def _baixar_com_ytdlp(self, vimeo_url, pasta_destino, nome_arquivo, idx, total_aulas, nome_aula, num_str):
         caminho_saida = os.path.join(pasta_destino, f"{nome_arquivo}.mp4")
         base_progresso = 50 + int(((idx - 1) / total_aulas) * 45)
@@ -460,6 +518,7 @@ class UniversoWorker(QThread):
                 env=env,
                 bufsize=1
             )
+            self._processo = process
 
             if process.stdout:
                 for line in iter(process.stdout.readline, ''):
@@ -482,6 +541,7 @@ class UniversoWorker(QThread):
                         self.velocidade.emit(f"{vel.group(1)} | ETA: {vel.group(2)}")
 
             process.wait()
+            self._processo = None
             self.velocidade.emit("-- MiB/s | ETA: --:--")
             if process.returncode == 0 and os.path.exists(caminho_saida):
                 return caminho_saida
