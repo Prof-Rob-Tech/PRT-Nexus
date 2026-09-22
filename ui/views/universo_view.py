@@ -554,8 +554,8 @@ class UniversoView(QWidget):
         caminho = str(item.get("caminho", ""))
         status = str(item.get("status", ""))
 
-        titulo_exibicao = re.sub(r"^\d+[\s\-_]*", "", titulo_bruto)
-        titulo_exibicao = re.sub(r"^[\s\-_]+", "", titulo_exibicao).replace("_", " ").strip()
+        titulo_exibicao = re.sub(r"^\d{2}\s+-\s+", "", titulo_bruto)
+        titulo_exibicao = titulo_exibicao.replace("_", " ").strip()
 
         linha_existente = -1
         for row in range(self.tabela.rowCount()):

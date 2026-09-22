@@ -59,24 +59,14 @@ class UniversoWorker(QThread):
 
                     self.progresso.emit("Mapeando lista de aulas...", 45)
                     if self.modo_avulso:
-                        aulas_mapeadas = [{
-                            "titulo": "Aula_Avulsa",
-                            "href": None,
-                            "nome_arquivo": "Aula_Avulsa",
-                            "pasta": self.pasta_destino,
-                        }]
+                        aulas_mapeadas = [self._aula_avulsa(page)]
                     else:
                         aulas_mapeadas = self._montar_aulas_em_pastas(page)
 
                     if not aulas_mapeadas:
                         vimeo_na_pagina = self._capturar_vimeo_atual(page)
                         if vimeo_na_pagina:
-                            aulas_mapeadas = [{
-                                "titulo": "Aula_Avulsa",
-                                "href": None,
-                                "nome_arquivo": "Aula_Avulsa",
-                                "pasta": self.pasta_destino,
-                            }]
+                            aulas_mapeadas = [self._aula_avulsa(page)]
                         else:
                             self.concluido.emit(False, "Nenhuma aula foi encontrada na página do curso.")
                             return
@@ -322,6 +312,40 @@ class UniversoWorker(QThread):
     def _pagina_ativa(self, context, page):
         abertas = [p for p in context.pages if not p.is_closed()]
         return abertas[-1] if abertas else page
+
+    def _aula_avulsa(self, page):
+        nome = self._limpar_nome(self._titulo_da_pagina(page)) or "Aula_Avulsa"
+        return {
+            "titulo": nome,
+            "href": None,
+            "nome_arquivo": nome,
+            "pasta": self.pasta_destino,
+        }
+
+    def _titulo_da_pagina(self, page):
+        try:
+            titulo = page.evaluate(
+                """() => {
+                    const limpar = (texto) => (texto || "").replace(/\\s+/g, " ").trim();
+                    const seletores = [
+                        "h1.entry-title",
+                        "h1.wp-block-post-title",
+                        ".sensei-course-theme-lesson-header h1",
+                        "header h1",
+                        "h1",
+                    ];
+                    for (const seletor of seletores) {
+                        const el = document.querySelector(seletor);
+                        const texto = limpar(el ? el.innerText : "");
+                        if (texto.length > 2) return texto;
+                    }
+                    const doc = limpar(document.title).split("|")[0];
+                    return limpar(doc);
+                }"""
+            )
+        except Exception:
+            titulo = ""
+        return (titulo or "").strip()
 
     def _montar_aulas_em_pastas(self, page):
         """Aplica nome, estrutura e numeração escolhidos na tela."""
