@@ -7,6 +7,7 @@ PRT Nexus - Views Package
 from ui.views.browser_view import BrowserView
 from ui.views.chip7_view import Chip7View
 from ui.views.downloads_view import DownloadsView
+from ui.views.drive_view import DriveView
 from ui.views.favorites_view import FavoritesView
 from ui.views.history_view import HistoryView
 from ui.views.home_view import HomeView
@@ -20,6 +21,7 @@ __all__ = [
     "BrowserView",
     "Chip7View",
     "DownloadsView",
+    "DriveView",
     "FavoritesView",
     "HistoryView",
     "HomeView",

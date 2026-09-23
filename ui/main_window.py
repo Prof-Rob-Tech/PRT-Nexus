@@ -23,6 +23,7 @@ from theme.colors import ThemeColors
 from ui.views.browser_view import BrowserView
 from ui.views.chip7_view import Chip7View
 from ui.views.downloads_view import DownloadsView
+from ui.views.drive_view import DriveView
 from ui.views.home_view import HomeView
 from ui.views.kiwify_view import KiwifyView
 from ui.views.mega_view import MegaView
@@ -287,6 +288,7 @@ class MainWindow(QMainWindow):
         self.universo_view = UniversoView(downloads_view=self.downloads_view)
         self.chip7_view = Chip7View(downloads_view=self.downloads_view)
         self.mega_view = MegaView(downloads_view=self.downloads_view)
+        self.drive_view = DriveView(downloads_view=self.downloads_view)
 
         # Adiciona as Views ao StackedWidget
         self.stacked_widget.addWidget(self.home_view)
@@ -296,6 +298,7 @@ class MainWindow(QMainWindow):
         self.stacked_widget.addWidget(self.universo_view)
         self.stacked_widget.addWidget(self.chip7_view)
         self.stacked_widget.addWidget(self.mega_view)
+        self.stacked_widget.addWidget(self.drive_view)
 
         # Layout Principal
         main_layout.addWidget(self.sidebar)
@@ -311,6 +314,7 @@ class MainWindow(QMainWindow):
             "Universo Técnico": self.universo_view,
             "Chip 7": self.chip7_view,
             "Mega": self.mega_view,
+            "Google Drive": self.drive_view,
         }
 
         if route_name in routes:
