@@ -53,9 +53,13 @@ class Chip7Worker(QThread):
         self.opcoes = opcoes or {}
         self.relatorio_txt = []
         self._cancelado = False
+        self._video_avulso = ""
 
     def extrair_url_video(self, driver):
         """Busca URLs de player em iframes, tags video ou scripts da página."""
+        if self.modo_avulso and self._video_avulso:
+            return self._video_avulso
+
         time.sleep(2.5)
         video_url = None
 
@@ -170,6 +174,151 @@ class Chip7Worker(QThread):
         )
         self.relatorio_txt.append(bloco)
 
+    def _id_do_curso(self):
+        match = re.search(r"/curso/(\d+)", self.url)
+        return match.group(1) if match else ""
+
+    def _src_do_path(self, path):
+        if not path:
+            return ""
+        texto = str(path).replace("&amp;", "&")
+        match = re.search(r"""<iframe\s[^>]*src=["']([^"']+)["']""", texto, re.I)
+        if match:
+            return match.group(1)
+        if texto.startswith("http"):
+            return texto.strip()
+        return ""
+
+    def _combinar_aula(self, aulas, nome):
+        alvo = Chip7Mapper.normalizar(nome)
+        exatas = []
+        parciais = []
+        for aula in aulas:
+            titulo = (aula.get("titulo") or "").strip()
+            norm = Chip7Mapper.normalizar(titulo)
+            if not norm:
+                continue
+            if norm == alvo:
+                exatas.append(aula)
+            elif alvo and norm.startswith(alvo):
+                resto = norm[len(alvo):]
+                if resto[:1].isdigit() and alvo[-1:].isdigit():
+                    continue
+                parciais.append(aula)
+        if exatas:
+            return exatas[0]
+        if len(parciais) == 1:
+            return parciais[0]
+        return None
+
+    def _aulas_do_curso(self, driver):
+        course_id = self._id_do_curso()
+        if not course_id:
+            return []
+        driver.set_script_timeout(20)
+        try:
+            dados = driver.execute_async_script(
+                """
+                const courseId = arguments[0];
+                const done = arguments[arguments.length - 1];
+                fetch("/api/student_lessons.php?course_id=" + encodeURIComponent(courseId), {
+                    credentials: "include"
+                })
+                    .then((resp) => resp.json())
+                    .then((json) => done(json))
+                    .catch((erro) => done({ ok: false, message: String(erro) }));
+                """,
+                course_id,
+            )
+        except Exception:
+            return []
+        if not isinstance(dados, dict) or not dados.get("ok"):
+            return []
+        return dados.get("aulas") or []
+
+    def _clicar_botao_aula(self, driver, titulo):
+        alvo = Chip7Mapper.normalizar(titulo)
+        if not alvo:
+            return False
+        try:
+            return bool(driver.execute_script(
+                """
+                const alvo = arguments[0];
+                const normalizar = (texto) => (texto || "")
+                    .normalize("NFD")
+                    .replace(/[\\u0300-\\u036f]/g, "")
+                    .toUpperCase()
+                    .replace(/[^A-Z0-9]/g, "");
+                const botoes = Array.from(document.querySelectorAll("button.student-lesson-nav__btn"));
+                let escolhido = botoes.find((btn) => normalizar(btn.innerText) === alvo);
+                if (!escolhido) {
+                    const parciais = botoes.filter((btn) => normalizar(btn.innerText).startsWith(alvo));
+                    if (parciais.length === 1) escolhido = parciais[0];
+                }
+                if (!escolhido) return false;
+                escolhido.scrollIntoView({block: "center"});
+                escolhido.click();
+                return true;
+                """,
+                alvo,
+            ))
+        except Exception:
+            return False
+
+    def _titulo_aula_aberta(self, driver):
+        try:
+            titulo = driver.execute_script(
+                """
+                const el = document.querySelector("h1.student-lesson-main__title");
+                return el ? (el.innerText || "").replace(/\\s+/g, " ").trim() : "";
+                """
+            )
+        except Exception:
+            titulo = ""
+        return (titulo or "").strip()
+
+    def _iframe_aula_aberta(self, driver):
+        try:
+            src = driver.execute_script(
+                """
+                const el = document.querySelector("iframe.student-embed__iframe");
+                return el ? (el.getAttribute("src") || "") : "";
+                """
+            )
+        except Exception:
+            src = ""
+        return (src or "").strip()
+
+    def _abrir_aula_avulsa(self, driver, mapper, nome_pedido):
+        """No Chip 7 todas as aulas usam a URL do curso. A troca é o botão do menu."""
+        aulas = self._aulas_do_curso(driver)
+        aula = self._combinar_aula(aulas, nome_pedido)
+        if not aula and not aulas:
+            time.sleep(2)
+            aulas = self._aulas_do_curso(driver)
+            aula = self._combinar_aula(aulas, nome_pedido)
+        if not aula:
+            return ""
+
+        titulo = (aula.get("titulo") or nome_pedido).strip()
+        self._video_avulso = self._src_do_path(aula.get("path"))
+        self._clicar_botao_aula(driver, titulo)
+
+        alvo = Chip7Mapper.normalizar(titulo)
+        for _ in range(25):
+            time.sleep(0.3)
+            titulo_visto = self._titulo_aula_aberta(driver)
+            if Chip7Mapper.normalizar(titulo_visto) != alvo:
+                continue
+            iframe = self._iframe_aula_aberta(driver)
+            if iframe:
+                self._video_avulso = iframe
+            return mapper.limpar_nome(titulo_visto) or mapper.limpar_nome(titulo)
+
+        if self._video_avulso:
+            return mapper.limpar_nome(titulo)
+        return ""
+
     def _resolver_nome_curso(self, mapper, modulo):
         """Determina o nome da pasta do curso descartando termos genéricos."""
         nome_custom = self.opcoes.get("nome_conteudo", "").strip()
@@ -182,6 +331,35 @@ class Chip7Worker(QThread):
             return mapper.limpar_nome(nome_extraido)
 
         return "FACE ID 3.0"
+
+    def _formato_download(self):
+        """Traduz a qualidade escolhida na tela para o formato do yt-dlp."""
+        qualidade = self.opcoes.get("qualidade") or ""
+        if "MP3" in qualidade or "Áudio" in qualidade or "Audio" in qualidade:
+            return {
+                "ext": "mp3",
+                "ydl": {
+                    "format": "ba/b",
+                    "postprocessors": [{
+                        "key": "FFmpegExtractAudio",
+                        "preferredcodec": "mp3",
+                        "preferredquality": "192",
+                    }],
+                },
+            }
+        if "1080" in qualidade:
+            formato = "bv*[height<=1080]+ba/b[height<=1080]/best[height<=1080]/b"
+        elif "720" in qualidade:
+            formato = "bv*[height<=720]+ba/b[height<=720]/best[height<=720]/b"
+        else:
+            formato = "best[ext=mp4]/b/bestvideo+bestaudio/best"
+        return {
+            "ext": "mp4",
+            "ydl": {
+                "format": formato,
+                "merge_output_format": "mp4",
+            },
+        }
 
     def _destino_da_aula(self, nome_curso, num_mod, titulo_mod, num_aula, titulo_aula, indice_global):
         """Aplica estrutura e numeração escolhidas na tela."""
@@ -254,7 +432,35 @@ class Chip7Worker(QThread):
 
             self.progresso.emit("A identificar módulo e mapear aulas...", 40)
             mapper = Chip7Mapper(driver)
-            estrutura_curso = mapper.mapear_curso()
+            if self.modo_avulso:
+                nome_pedido = (self.opcoes.get("nome_aula") or "").strip()
+                if not nome_pedido:
+                    self.concluido.emit(
+                        False,
+                        "Digite o nome da aula. No Chip 7 o link do módulo é o mesmo para todas.",
+                    )
+                    return
+                self.progresso.emit(f"A abrir no menu: {nome_pedido}", 42)
+                titulo_avulso = self._abrir_aula_avulsa(driver, mapper, nome_pedido)
+                if not titulo_avulso:
+                    self.concluido.emit(
+                        False,
+                        f"Não encontrei '{nome_pedido}' na lista de aulas desse curso.",
+                    )
+                    return
+                estrutura_curso = [{
+                    "nome_curso": titulo_avulso,
+                    "num_mod": 1,
+                    "titulo_mod": "",
+                    "aulas": [{
+                        "num_aula": 1,
+                        "titulo": titulo_avulso,
+                        "url": "",
+                        "texto_original": "",
+                    }],
+                }]
+            else:
+                estrutura_curso = mapper.mapear_curso()
 
             total_aulas = sum(len(m["aulas"]) for m in estrutura_curso)
             aulas_processadas = 0
@@ -284,18 +490,25 @@ class Chip7Worker(QThread):
                     id_tabela = f"{aulas_processadas}"
                         
                     titulo_aula_limpo = mapper.limpar_nome(aula['titulo'], titulo_modulo=titulo_mod_limpo)
-                    pasta_aula, nome_base_arquivo = self._destino_da_aula(
-                        nome_curso_limpo,
-                        modulo["num_mod"],
-                        titulo_mod_limpo,
-                        aula["num_aula"],
-                        titulo_aula_limpo,
-                        aulas_processadas,
-                    )
+                    if self.modo_avulso:
+                        pasta_aula = self.destino
+                        nome_base_arquivo = titulo_aula_limpo or "Aula_Avulsa"
+                    else:
+                        pasta_aula, nome_base_arquivo = self._destino_da_aula(
+                            nome_curso_limpo,
+                            modulo["num_mod"],
+                            titulo_mod_limpo,
+                            aula["num_aula"],
+                            titulo_aula_limpo,
+                            aulas_processadas,
+                        )
                     os.makedirs(pasta_aula, exist_ok=True)
                         
+                    formato_download = self._formato_download()
                     caminho_template_ytdlp = os.path.join(pasta_aula, f"{nome_base_arquivo}.%(ext)s")
-                    caminho_esperado_mp4 = os.path.join(pasta_aula, f"{nome_base_arquivo}.mp4")
+                    caminho_esperado_mp4 = os.path.join(
+                        pasta_aula, f"{nome_base_arquivo}.{formato_download['ext']}"
+                    )
 
                     self.item_concluido.emit({
                         "num": id_tabela,
@@ -367,6 +580,9 @@ class Chip7Worker(QThread):
                             "caminho": "-",
                             "status": "Ignorado (Sem vídeo)"
                         })
+                        if self.modo_avulso:
+                            self.concluido.emit(False, "Nenhum vídeo foi localizado na página.")
+                            return
                         continue
 
                     ultima_atualizacao = [0]
@@ -415,15 +631,14 @@ class Chip7Worker(QThread):
                     if yt_dlp:
                         ydl_opts = {
                             'outtmpl': caminho_template_ytdlp,
-                            'format': 'best[ext=mp4]/b/bestvideo+bestaudio/best',
-                            'merge_output_format': 'mp4',
                             'quiet': True,
                             'no_warnings': True,
                             'http_headers': {
                                 'User-Agent': user_agent,
                                 'Referer': driver.current_url
                             },
-                            'progress_hooks': [hook_download]
+                            'progress_hooks': [hook_download],
+                            **formato_download["ydl"],
                         }
                         
                         try:

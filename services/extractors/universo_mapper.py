@@ -24,6 +24,7 @@ class UniversoWorker(QThread):
         self._mutex = QMutex()
         self._condicao = QWaitCondition()
         self._processo = None
+        self.relatorio_txt = []
 
     def run(self):
         try:
@@ -80,7 +81,8 @@ class UniversoWorker(QThread):
                         nome_arquivo = aula["nome_arquivo"]
                         pasta_aula = aula["pasta"]
                         os.makedirs(pasta_aula, exist_ok=True)
-                        caminho_previsto = os.path.join(pasta_aula, f"{nome_arquivo}.mp4")
+                        extensao = "mp3" if self._qualidade_audio() else "mp4"
+                        caminho_previsto = os.path.join(pasta_aula, f"{nome_arquivo}.{extensao}")
 
                         if not self.modo_avulso and aula.get("href"):
                             try:
@@ -90,6 +92,8 @@ class UniversoWorker(QThread):
                                 pass
 
                         pagina_atual = self._pagina_ativa(context, page)
+                        self._baixar_anexos(pagina_atual, pasta_aula)
+                        self._coletar_descricao(pagina_atual, nome_aula, aula.get("href"))
                         vimeo_url = self._capturar_vimeo_atual(pagina_atual)
                         num_str = str(idx)
 
@@ -114,6 +118,7 @@ class UniversoWorker(QThread):
                                 "status": status_final
                             })
 
+                    self._salvar_indice()
                     if videos_baixados == 0:
                         self.concluido.emit(False, "Nenhum vídeo foi localizado na página.")
                         return
@@ -512,8 +517,129 @@ class UniversoWorker(QThread):
             ntdll.NtResumeProcess(handle)
         kernel32.CloseHandle(handle)
 
+    def _baixar_anexos(self, page, pasta_aula):
+        if not self.opcoes.get("baixar_anexos"):
+            return
+        extensoes = (".pdf", ".zip", ".rar", ".7z", ".epub", ".docx", ".xlsx", ".pptx", ".txt")
+        try:
+            links = page.eval_on_selector_all(
+                "a[href]",
+                """els => els.map(a => ({
+                    href: a.href || "",
+                    texto: (a.innerText || "").replace(/\\s+/g, " ").trim()
+                }))""",
+            )
+        except Exception:
+            return
+
+        vistos = set()
+        for link in links or []:
+            self._checar_pausa()
+            href = (link.get("href") or "").strip()
+            if not href or href.startswith("javascript:") or href in vistos:
+                continue
+            baixo = href.lower()
+            if any(b in baixo for b in ("vimeo.com", "youtube.com", "youtu.be", "wp-login", "logout", "mailto:", "tel:")):
+                continue
+            caminho_url = baixo.split("?")[0]
+            tem_extensao = any(caminho_url.endswith(ext) for ext in extensoes)
+            parece_anexo = "download" in baixo or "attachment" in baixo
+            if not tem_extensao and not parece_anexo:
+                continue
+            vistos.add(href)
+
+            nome_url = os.path.basename(caminho_url)
+            if tem_extensao and nome_url:
+                nome = nome_url
+            else:
+                nome = re.sub(r'[\\/*?:"<>|]', "_", link.get("texto") or "anexo").strip() or "anexo"
+                match_ext = re.search(r"\.(pdf|zip|rar|7z|epub|docx|xlsx|pptx|txt)", href, re.I)
+                if not any(nome.lower().endswith(ext) for ext in extensoes):
+                    nome += match_ext.group(0) if match_ext else ".pdf"
+            nome = nome[:140]
+            caminho = os.path.join(pasta_aula, nome)
+            if os.path.exists(caminho):
+                continue
+            try:
+                resp = page.context.request.get(href, timeout=60000)
+                if not resp.ok:
+                    continue
+                corpo = resp.body()
+                if corpo:
+                    with open(caminho, "wb") as arquivo:
+                        arquivo.write(corpo)
+            except Exception:
+                continue
+
+    def _coletar_descricao(self, page, nome_aula, href):
+        if not self.opcoes.get("gerar_txt"):
+            return
+        try:
+            texto = page.evaluate(
+                """() => {
+                    const limpar = (t) => (t || "").replace(/\\s+/g, " ").trim();
+                    const seletores = [
+                        ".sensei-course-theme-lesson-content",
+                        ".entry-content",
+                        "article .lesson-content",
+                        ".wp-block-post-content",
+                    ];
+                    for (const seletor of seletores) {
+                        const el = document.querySelector(seletor);
+                        if (!el) continue;
+                        const partes = Array.from(el.querySelectorAll("p"))
+                            .map((p) => limpar(p.innerText))
+                            .filter((t) => t.length > 1);
+                        if (partes.length) return partes.join("\\n");
+                    }
+                    return "";
+                }"""
+            )
+        except Exception:
+            texto = ""
+        if not texto:
+            texto = "Sem descrição de texto disponível para esta aula."
+        try:
+            link = href or page.url
+        except Exception:
+            link = href or ""
+        self.relatorio_txt.append(
+            f"AULA: {nome_aula}\n"
+            f"LINK: {link}\n"
+            f"DESCRIÇÃO:\n{texto}\n"
+            f"{'-' * 60}\n\n"
+        )
+
+    def _salvar_indice(self):
+        if not self.opcoes.get("gerar_txt") or not self.relatorio_txt:
+            return
+        caminho_txt = os.path.join(self.pasta_destino, "indice_e_descricao_curso.txt")
+        try:
+            with open(caminho_txt, "w", encoding="utf-8") as arquivo:
+                arquivo.write("=== ÍNDICE E CONTEÚDO DO CURSO ===\n\n")
+                arquivo.writelines(self.relatorio_txt)
+        except Exception as err:
+            print(f"Erro ao salvar arquivo .txt: {err}")
+
+    def _qualidade_audio(self):
+        qualidade = self.opcoes.get("qualidade") or ""
+        return "MP3" in qualidade or "Áudio" in qualidade or "Audio" in qualidade
+
+    def _argumentos_qualidade(self):
+        qualidade = self.opcoes.get("qualidade") or ""
+        if self._qualidade_audio():
+            return ["-x", "--audio-format", "mp3", "--audio-quality", "192", "-f", "ba/b"]
+        if "1080" in qualidade:
+            formato = "bv*[height<=1080]+ba/b[height<=1080]/best[height<=1080]/b"
+        elif "720" in qualidade:
+            formato = "bv*[height<=720]+ba/b[height<=720]/best[height<=720]/b"
+        else:
+            formato = "bv*+ba/b"
+        return ["-f", formato, "--merge-output-format", "mp4"]
+
     def _baixar_com_ytdlp(self, vimeo_url, pasta_destino, nome_arquivo, idx, total_aulas, nome_aula, num_str):
-        caminho_saida = os.path.join(pasta_destino, f"{nome_arquivo}.mp4")
+        extensao = "mp3" if self._qualidade_audio() else "mp4"
+        caminho_saida = os.path.join(pasta_destino, f"{nome_arquivo}.{extensao}")
         base_progresso = 50 + int(((idx - 1) / total_aulas) * 45)
         fatia_progresso = 45 / total_aulas
 
@@ -523,6 +649,7 @@ class UniversoWorker(QThread):
             "--no-colors",
             "--no-playlist",
             "--progress",
+            *self._argumentos_qualidade(),
             "-o", caminho_saida,
             "--referer", "https://universotecnico.com/",
             vimeo_url

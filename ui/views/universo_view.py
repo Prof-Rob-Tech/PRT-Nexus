@@ -501,6 +501,9 @@ class UniversoView(QWidget):
             "nome_conteudo": self.txt_nome_conteudo.text().strip(),
             "estrutura": self.cmb_estrutura.currentText(),
             "midias": self.cmb_midias.currentText(),
+            "qualidade": self.cmb_qualidade.currentText(),
+            "baixar_anexos": self.chk_anexos.isChecked(),
+            "gerar_txt": self.chk_txt.isChecked(),
         }
         self.worker = UniversoWorker(url, email, senha, destino, modo_avulso=modo_avulso, opcoes=opcoes)
         self.worker.progresso.connect(self._on_progresso)

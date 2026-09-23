@@ -168,8 +168,17 @@ class Chip7View(QWidget):
         ly_captura.setSpacing(8)
 
         self.txt_url = QLineEdit()
-        self.txt_url.setPlaceholderText("Cole o link do vídeo, aula ou curso aqui...")
+        self.txt_url.setPlaceholderText("Cole o link do módulo ou do curso...")
         ly_captura.addWidget(self.txt_url)
+
+        ly_aula = QHBoxLayout()
+        lbl_aula = QLabel("Aula:")
+        lbl_aula.setProperty("class", "lbl-box")
+        self.txt_aula = QLineEdit()
+        self.txt_aula.setPlaceholderText("Nome no menu, ex.: SWAP RF")
+        ly_aula.addWidget(lbl_aula)
+        ly_aula.addWidget(self.txt_aula, stretch=1)
+        ly_captura.addLayout(ly_aula)
 
         ly_qual = QHBoxLayout()
         lbl_qual = QLabel("Qualidade:")
@@ -501,6 +510,16 @@ class Chip7View(QWidget):
             QMessageBox.warning(self, "Campos Vazios", "Preencha o Link, E-mail e Senha antes de iniciar!")
             return
 
+        nome_aula = self.txt_aula.text().strip()
+        if modo_avulso and not nome_aula:
+            QMessageBox.warning(
+                self,
+                "Nome da aula",
+                "No Chip 7 o link é o mesmo para todas as aulas do módulo. "
+                "Digite o nome da aula como aparece no menu.",
+            )
+            return
+
         opcoes = {
             "baixar_anexos": self.chk_anexos.isChecked(),
             "gerar_txt": self.chk_txt.isChecked(),
@@ -508,7 +527,8 @@ class Chip7View(QWidget):
             "qualidade": self.cmb_qualidade.currentText(),
             "nome_conteudo": self.txt_nome_conteudo.text().strip(),
             "estrutura": self.cmb_estrutura.currentText(),
-            "midias": self.cmb_midias.currentText()
+            "midias": self.cmb_midias.currentText(),
+            "nome_aula": nome_aula,
         }
 
         self.btn_avulso.setEnabled(False)
@@ -584,8 +604,8 @@ class Chip7View(QWidget):
         caminho = str(item.get("caminho", ""))
         status = str(item.get("status", ""))
 
-        titulo_exibicao = re.sub(r'^\d+[\s\-_]*', '', titulo_bruto)
-        titulo_exibicao = re.sub(r'^[\s\-_]+', '', titulo_exibicao).replace('_', ' ').strip()
+        titulo_exibicao = re.sub(r'^\d{2}\s+-\s+', '', titulo_bruto)
+        titulo_exibicao = titulo_exibicao.replace('_', ' ').strip()
 
         linha_existente = -1
         for row in range(self.tabela.rowCount()):
