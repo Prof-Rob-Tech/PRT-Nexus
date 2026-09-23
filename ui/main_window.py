@@ -25,6 +25,7 @@ from ui.views.chip7_view import Chip7View
 from ui.views.downloads_view import DownloadsView
 from ui.views.home_view import HomeView
 from ui.views.kiwify_view import KiwifyView
+from ui.views.mega_view import MegaView
 from ui.views.universo_view import UniversoView
 
 
@@ -285,6 +286,7 @@ class MainWindow(QMainWindow):
         self.kiwify_view = KiwifyView()
         self.universo_view = UniversoView(downloads_view=self.downloads_view)
         self.chip7_view = Chip7View(downloads_view=self.downloads_view)
+        self.mega_view = MegaView(downloads_view=self.downloads_view)
 
         # Adiciona as Views ao StackedWidget
         self.stacked_widget.addWidget(self.home_view)
@@ -293,6 +295,7 @@ class MainWindow(QMainWindow):
         self.stacked_widget.addWidget(self.kiwify_view)
         self.stacked_widget.addWidget(self.universo_view)
         self.stacked_widget.addWidget(self.chip7_view)
+        self.stacked_widget.addWidget(self.mega_view)
 
         # Layout Principal
         main_layout.addWidget(self.sidebar)
@@ -307,6 +310,7 @@ class MainWindow(QMainWindow):
             "Kiwify": self.kiwify_view,
             "Universo Técnico": self.universo_view,
             "Chip 7": self.chip7_view,
+            "Mega": self.mega_view,
         }
 
         if route_name in routes:
