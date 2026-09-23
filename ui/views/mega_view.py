@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QPlainTextEdit,
     QComboBox,
     QMessageBox,
     QProgressBar,
@@ -22,7 +23,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
 )
 
-from services.extractors.mega_connector import MegaWorker
+from services.extractors.mega_connector import MegaWorker, separar_links
 
 
 class MegaView(QWidget):
@@ -62,7 +63,7 @@ class MegaView(QWidget):
                 border: 1px solid #3c3c3c;
                 border-radius: 12px;
             }
-            QLineEdit, QComboBox {
+            QLineEdit, QPlainTextEdit, QComboBox {
                 background-color: #252526;
                 border: 1px solid #3a3a3a;
                 border-radius: 6px;
@@ -70,7 +71,7 @@ class MegaView(QWidget):
                 padding: 6px 10px;
                 font-size: 12px;
             }
-            QLineEdit:focus, QComboBox:focus { border: 1px solid #0066cc; }
+            QLineEdit:focus, QPlainTextEdit:focus, QComboBox:focus { border: 1px solid #0066cc; }
             QLabel.lbl-box {
                 background-color: #252526;
                 border: 1px solid #3a3a3a;
@@ -115,7 +116,7 @@ class MegaView(QWidget):
 
         lbl_titulo = QLabel("Conector Mega")
         lbl_titulo.setStyleSheet("font-size: 24px; font-weight: bold; color: #ffffff;")
-        lbl_sub = QLabel("Baixe um arquivo ou uma pasta pública do Mega, com o nome e a extensão originais.")
+        lbl_sub = QLabel("Cole um ou mais links públicos, um por linha. A fila baixa na ordem, com o nome original.")
         lbl_sub.setStyleSheet("font-size: 14px; color: #888888;")
         layout_principal.addWidget(lbl_titulo)
         layout_principal.addWidget(lbl_sub)
@@ -125,14 +126,15 @@ class MegaView(QWidget):
         ly_esq = QVBoxLayout()
         ly_esq.setSpacing(10)
 
-        gb_captura = QGroupBox("🔗 Link público do Mega")
+        gb_captura = QGroupBox("🔗 Links públicos do Mega")
         ly_captura = QVBoxLayout(gb_captura)
         ly_captura.setContentsMargins(10, 10, 10, 10)
         ly_captura.setSpacing(8)
-        self.txt_url = QLineEdit()
-        self.txt_url.setPlaceholderText("https://mega.nz/folder/... ou https://mega.nz/file/...")
+        self.txt_url = QPlainTextEdit()
+        self.txt_url.setPlaceholderText("Um link por linha\nhttps://mega.nz/folder/...\nhttps://mega.nz/file/...")
+        self.txt_url.setFixedHeight(78)
         ly_captura.addWidget(self.txt_url)
-        self.btn_baixar = QPushButton("📥 Listar e baixar")
+        self.btn_baixar = QPushButton("📥 Listar e baixar a fila")
         self.btn_baixar.setStyleSheet(
             "background-color: #D9272E; color: white; font-weight: bold; padding: 8px; border-radius: 8px; border: none;"
         )
@@ -162,7 +164,7 @@ class MegaView(QWidget):
         lbl_nome = QLabel("Nome do Conteúdo")
         lbl_nome.setProperty("class", "lbl-box")
         self.txt_nome_conteudo = QLineEdit()
-        self.txt_nome_conteudo.setPlaceholderText("Vazio usa o nome da pasta do Mega")
+        self.txt_nome_conteudo.setPlaceholderText("Vazio usa o nome do Mega. Com vários links, cada um fica na própria pasta.")
 
         lbl_est = QLabel("Estrutura")
         lbl_est.setProperty("class", "lbl-box")
@@ -367,10 +369,10 @@ class MegaView(QWidget):
                 self.tabela.removeRow(row)
 
     def _iniciar_download(self):
-        url = self.txt_url.text().strip()
+        links = separar_links(self.txt_url.toPlainText())
         destino = self.txt_destino.text().strip()
-        if not url:
-            QMessageBox.warning(self, "Link vazio", "Cole o link público do Mega antes de baixar.")
+        if not links:
+            QMessageBox.warning(self, "Link vazio", "Cole um ou mais links públicos do Mega, um por linha.")
             return
         self.txt_destino.deselect()
         self.tabela.setRowCount(0)
@@ -385,7 +387,7 @@ class MegaView(QWidget):
             "estrutura": self.cmb_estrutura.currentText(),
             "midias": self.cmb_midias.currentText(),
         }
-        self.worker = MegaWorker(url, destino, opcoes=opcoes)
+        self.worker = MegaWorker("", destino, opcoes=opcoes, urls=links)
         self.worker.progresso.connect(self._on_progresso)
         self.worker.velocidade.connect(self.lbl_velocidade.setText)
         self.worker.item_progresso.connect(self._on_item_progresso)

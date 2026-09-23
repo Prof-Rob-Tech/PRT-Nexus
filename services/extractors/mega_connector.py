@@ -17,6 +17,24 @@ class DownloadCancelado(Exception):
     pass
 
 
+def separar_links(texto):
+    """Um link por linha. Linhas vazias e repetidas saem da fila."""
+    links = []
+    vistos = set()
+    for parte in re.split(r"[\s,;]+", texto or ""):
+        link = parte.strip()
+        if not link:
+            continue
+        if not link.startswith("http"):
+            link = "https://" + link.lstrip("/")
+        chave = link.lower()
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        links.append(link)
+    return links
+
+
 def limpar_segmento(texto):
     texto_limpo = re.sub(r'[\\/*?:"<>|]', "", texto or "")
     return re.sub(r"\s+", " ", texto_limpo).strip() or "arquivo"
@@ -100,9 +118,13 @@ class MegaWorker(QThread):
     item_concluido = Signal(dict)
     concluido = Signal(bool, str)
 
-    def __init__(self, url, destino, opcoes=None, parent=None):
+    def __init__(self, url, destino, opcoes=None, parent=None, urls=None):
         super().__init__(parent)
-        self.url = (url or "").strip()
+        if urls is None:
+            self.urls = separar_links(url or "")
+        else:
+            self.urls = [item for item in urls if (item or "").strip()]
+        self.url = self.urls[0] if self.urls else ""
         self.destino = (destino or "").strip() or os.path.join(os.path.expanduser("~"), "Downloads", "PRT_Nexus")
         self.opcoes = opcoes or {}
         self._pausado = False
@@ -118,57 +140,41 @@ class MegaWorker(QThread):
             self.concluido.emit(False, "Instale a biblioteca do Mega: pip install mega-public-client")
             return
 
-        if not self.url.startswith("http"):
-            self.url = "https://" + self.url.lstrip("/")
-
-        try:
-            link = parse_mega_url(self.url)
-        except MegaInvalidURLError:
-            self.concluido.emit(
-                False,
-                "Link do Mega inválido. Use um link público de arquivo ou de pasta.",
-            )
+        if not self.urls:
+            self.concluido.emit(False, "Cole pelo menos um link público do Mega.")
             return
 
-        nome_raiz = (self.opcoes.get("nome_conteudo") or "").strip()
+        nome_digitado = (self.opcoes.get("nome_conteudo") or "").strip()
+        nome_raiz = nome_digitado if len(self.urls) == 1 else ""
         achatar = "Mesma Pasta" in (self.opcoes.get("estrutura") or "")
         midias = self.opcoes.get("midias") or ""
         os.makedirs(self.destino, exist_ok=True)
 
         try:
             with MegaClient() as client:
-                self.progresso.emit("Lendo o link do Mega...", 5)
-                if link.type.value == "file":
-                    info = client.get_file_info(self.url)
-                    pasta = limpar_segmento(nome_raiz) if nome_raiz else "Mega"
-                    itens = [{
-                        "titulo": limpar_segmento(info.name),
-                        "partes": [pasta, limpar_segmento(info.name)],
-                        "size": int(info.size or 0),
-                        "info": info,
-                        "node": None,
-                    }]
-                    if not aceita_midia(info.name, midias):
-                        itens = []
-                else:
-                    pasta = client.get_folder_info(self.url)
-                    itens = listar_arquivos(
-                        pasta.nodes,
-                        nome_raiz,
-                        achatar,
-                        midias,
-                        somente_handle=link.selected_file,
-                    )
-                    for item in itens:
-                        item["info"] = None
+                itens = []
+                links_invalidos = []
+                for indice_link, url in enumerate(self.urls, 1):
+                    self.progresso.emit(f"Lendo link {indice_link}/{len(self.urls)}...", 2)
+                    try:
+                        itens.extend(self._itens_do_link(client, url, nome_raiz, achatar, midias, parse_mega_url))
+                    except MegaInvalidURLError:
+                        links_invalidos.append(url)
+                    except MegaClientError as erro:
+                        links_invalidos.append(f"{url} ({erro})")
 
                 if not itens:
-                    self.concluido.emit(False, "Nenhum arquivo encontrado para o filtro escolhido.")
+                    detalhe = ""
+                    if links_invalidos:
+                        detalhe = " " + " | ".join(links_invalidos[:3])
+                    self.concluido.emit(False, "Nenhum arquivo encontrado para o filtro escolhido." + detalhe)
                     return
+
+                self._evitar_nomes_repetidos(itens)
 
                 total_bytes = sum(item["size"] for item in itens) or 1
                 bytes_feitos = 0
-                erros = 0
+                erros = len(links_invalidos)
                 baixador = Downloader(client._client, client.retry, parallelism=1)
 
                 for idx, item in enumerate(itens, 1):
@@ -207,7 +213,7 @@ class MegaWorker(QThread):
                             info = FileInfo(
                                 name=node.name,
                                 size=node.size,
-                                download_url=client._node_download_url(pasta.handle, node.handle),
+                                download_url=client._node_download_url(item["folder_handle"], node.handle),
                                 key=node.key,
                                 handle=node.handle,
                                 attributes=node.attributes,
@@ -241,13 +247,57 @@ class MegaWorker(QThread):
                 self.velocidade.emit("-- MiB/s | ETA: --:--")
                 self.progresso.emit("Processo concluído!", 100)
                 if erros:
-                    self.concluido.emit(False, f"Concluído com {erros} arquivo(s) que falharam.")
+                    self.concluido.emit(False, f"Fila concluída com {erros} falha(s).")
                 else:
-                    self.concluido.emit(True, "Arquivos do Mega salvos.")
+                    self.concluido.emit(True, f"Fila concluída: {len(itens)} arquivo(s) de {len(self.urls)} link(s).")
         except MegaClientError as erro:
             self.concluido.emit(False, f"Erro no Mega: {erro}")
         except Exception as erro:
             self.concluido.emit(False, f"Erro no conector do Mega: {erro}")
+
+    def _evitar_nomes_repetidos(self, itens):
+        usados = set()
+        for item in itens:
+            pasta = item["partes"][:-1]
+            arquivo = item["partes"][-1]
+            base, ext = os.path.splitext(arquivo)
+            candidato = arquivo
+            indice = 2
+            while "/".join([*pasta, candidato]).lower() in usados:
+                candidato = f"{base}_{indice}{ext}"
+                indice += 1
+            item["partes"] = [*pasta, candidato]
+            item["titulo"] = candidato
+            usados.add("/".join(item["partes"]).lower())
+
+    def _itens_do_link(self, client, url, nome_raiz, achatar, midias, parse_mega_url):
+        link = parse_mega_url(url)
+        if link.type.value == "file":
+            info = client.get_file_info(url)
+            if not aceita_midia(info.name, midias):
+                return []
+            pasta = limpar_segmento(nome_raiz) if nome_raiz else "Mega"
+            return [{
+                "titulo": limpar_segmento(info.name),
+                "partes": [pasta, limpar_segmento(info.name)],
+                "size": int(info.size or 0),
+                "info": info,
+                "node": None,
+                "folder_handle": None,
+            }]
+
+        pasta = client.get_folder_info(url)
+        itens = listar_arquivos(
+            pasta.nodes,
+            nome_raiz,
+            achatar,
+            midias,
+            somente_handle=link.selected_file,
+        )
+        for item in itens:
+            item["info"] = None
+            item["folder_handle"] = pasta.handle
+        return itens
 
     def _baixar_arquivo(self, baixador, info, destino, idx, total, bytes_feitos, total_bytes, num):
         from mega_client.crypto import iter_mega_chunks
