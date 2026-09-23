@@ -15,6 +15,7 @@ from ui.views.kiwify_view import KiwifyView
 from ui.views.library_view import LibraryView
 from ui.views.mega_view import MegaView
 from ui.views.tiktok_view import TikTokView
+from ui.views.vimeo_view import VimeoView
 from ui.views.youtube_view import YouTubeView
 
 __all__ = [
@@ -29,5 +30,6 @@ __all__ = [
     "LibraryView",
     "MegaView",
     "TikTokView",
+    "VimeoView",
     "YouTubeView",
 ]
