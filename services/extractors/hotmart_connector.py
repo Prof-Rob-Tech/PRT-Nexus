@@ -115,7 +115,7 @@ class HotmartWorker(QThread):
             self._montar_sessao(driver)
             hash_aula = hash_de(self.url)
             if self.modo_avulso and hash_aula:
-                nome_curso = self._nome_do_curso({})
+                nome_curso = self._nome_do_curso({}, self._titulo_na_pagina(driver))
                 titulo = (self.opcoes.get("nome_aula") or "").strip() or "Aula"
                 aulas = [{
                     "num_mod": 1,
@@ -125,13 +125,10 @@ class HotmartWorker(QThread):
                     "hash": hash_aula,
                 }]
             else:
-                navegacao = self._get_json(NAVEGACAO)
-                modulos = navegacao.get("modules") or []
-                if not modulos:
+                nome_curso, aulas = self._menu_do_curso(driver)
+                if not aulas:
                     self.concluido.emit(False, "Entrei na conta, mas o menu do curso veio vazio.")
                     return
-                nome_curso = self._nome_do_curso(navegacao)
-                aulas = self._aulas_do_menu(modulos)
                 if self.modo_avulso:
                     aulas = self._so_a_aula_pedida(aulas)
                     if not aulas:
@@ -140,12 +137,15 @@ class HotmartWorker(QThread):
                         return
             total = len(aulas)
             erros = 0
+            sem_video = 0
             for indice, aula in enumerate(aulas, 1):
                 self._checar_pausa()
                 if self._cancelado:
                     break
                 status = self._baixar_aula(driver, aula, nome_curso, indice, total)
-                if status != "Concluído":
+                if status == "Sem vídeo":
+                    sem_video += 1
+                elif status != "Concluído":
                     erros += 1
             if self._cancelado:
                 self.velocidade.emit("-- MiB/s | ETA: --:--")
@@ -155,6 +155,11 @@ class HotmartWorker(QThread):
             self.progresso.emit("Processo concluído!", 100)
             if erros:
                 self.concluido.emit(False, f"Fila concluída com {erros} aula(s) sem vídeo ou protegida(s).")
+            elif sem_video:
+                self.concluido.emit(
+                    True,
+                    f"Fila concluída: {total - sem_video} vídeo(s). {sem_video} aula(s) sem vídeo ficaram de fora.",
+                )
             else:
                 self.concluido.emit(True, f"Fila concluída: {total} aula(s).")
         except Exception as erro:
@@ -370,27 +375,128 @@ class HotmartWorker(QThread):
         except json.JSONDecodeError:
             return None
 
-    def _nome_do_curso(self, navegacao):
+    def _nome_do_curso(self, navegacao, titulo_pagina=""):
         digitado = (self.opcoes.get("nome_conteudo") or "").strip()
         if digitado:
             return limpar_nome(digitado)
+        if titulo_pagina:
+            return limpar_nome(titulo_pagina)
         for chave in ("name", "courseName", "membershipName"):
-            if navegacao.get(chave):
+            if isinstance(navegacao, dict) and navegacao.get(chave):
                 return limpar_nome(navegacao[chave])
         return limpar_nome(self._slug or "Hotmart")
+
+    def _menu_do_curso(self, driver):
+        navegacao = {}
+        try:
+            navegacao = self._get_json(NAVEGACAO) or {}
+        except Exception as erro:
+            print(f"Menu da API não veio: {erro}")
+        if isinstance(navegacao, list):
+            navegacao = {"modules": navegacao}
+        modulos = self._modulos_de(navegacao)
+        aulas = self._aulas_do_menu(modulos)
+        self._expandir_modulos(driver)
+        titulo_pagina = self._titulo_na_pagina(driver)
+        if not aulas:
+            aulas = self._aulas_na_pagina(driver, titulo_pagina)
+        return self._nome_do_curso(navegacao, titulo_pagina), aulas
+
+    def _modulos_de(self, navegacao):
+        if not isinstance(navegacao, dict):
+            return []
+        for chave in ("modules", "moduleList"):
+            modulos = navegacao.get(chave)
+            if isinstance(modulos, list) and modulos:
+                return modulos
+        dados = navegacao.get("data")
+        if isinstance(dados, dict):
+            return self._modulos_de(dados)
+        return []
+
+    def _titulo_na_pagina(self, driver):
+        try:
+            titulo = driver.execute_script(
+                "const el = document.querySelector('h1');"
+                "return el ? el.innerText : '';"
+            )
+        except Exception:
+            return ""
+        titulo = re.sub(r"\s+", " ", titulo or "").strip()
+        if normalizar(titulo) in ("", "hotmart", "club"):
+            return ""
+        return titulo
+
+    def _expandir_modulos(self, driver):
+        try:
+            driver.execute_script(
+                """
+                document.querySelectorAll('[aria-expanded="false"]').forEach((el) => {
+                    const caixa = el.getBoundingClientRect();
+                    if (caixa.top > 80 && caixa.width > 40) el.click();
+                });
+                """
+            )
+        except Exception:
+            pass
+        time.sleep(1.5)
+
+    def _aulas_na_pagina(self, driver, titulo_curso):
+        try:
+            bruto = driver.execute_script(
+                """
+                const limpar = (texto) => (texto || '').replace(/\\s+/g, ' ').trim();
+                const vistos = new Set();
+                const aulas = [];
+                document.querySelectorAll('a[href*="/content/"]').forEach((el) => {
+                    const match = (el.href || '').match(/\\/content\\/([^/?#]+)/);
+                    if (!match || vistos.has(match[1])) return;
+                    let nome = limpar(el.innerText).replace(/\\b\\d{1,2}:\\d{2}(?::\\d{2})?\\b/g, '').trim();
+                    if (nome.length < 2) return;
+                    vistos.add(match[1]);
+                    aulas.push({ hash: match[1], titulo: nome });
+                });
+                return aulas;
+                """
+            )
+        except Exception:
+            return []
+        titulo_mod = limpar_nome(titulo_curso or "Aulas")
+        aulas = []
+        for indice, item in enumerate(bruto or [], 1):
+            if not isinstance(item, dict) or not item.get("hash"):
+                continue
+            aulas.append({
+                "num_mod": 1,
+                "titulo_mod": titulo_mod,
+                "num_aula": indice,
+                "titulo": limpar_nome(item.get("titulo") or f"Aula {indice}"),
+                "hash": item["hash"],
+            })
+        return aulas
 
     def _aulas_do_menu(self, modulos):
         aulas = []
         for indice_mod, modulo in enumerate(modulos, 1):
+            if not isinstance(modulo, dict):
+                continue
             titulo_mod = limpar_nome(modulo.get("name") or f"Modulo {indice_mod}")
-            numero_mod = int(modulo.get("moduleOrder") or indice_mod)
-            for indice_aula, pagina in enumerate(modulo.get("pages") or [], 1):
+            numero_mod = int(modulo.get("moduleOrder") or modulo.get("sequence") or indice_mod)
+            paginas = (
+                modulo.get("pages")
+                or modulo.get("lessons")
+                or modulo.get("contents")
+                or []
+            )
+            for indice_aula, pagina in enumerate(paginas, 1):
+                if not isinstance(pagina, dict):
+                    continue
                 aulas.append({
                     "num_mod": numero_mod,
                     "titulo_mod": titulo_mod,
-                    "num_aula": int(pagina.get("pageOrder") or indice_aula),
+                    "num_aula": int(pagina.get("pageOrder") or pagina.get("page_order") or indice_aula),
                     "titulo": limpar_nome(pagina.get("name") or f"Aula {indice_aula}"),
-                    "hash": pagina.get("hash") or pagina.get("pageHash") or "",
+                    "hash": pagina.get("hash") or pagina.get("pageHash") or pagina.get("hashId") or "",
                 })
         return aulas
 
@@ -429,18 +535,37 @@ class HotmartWorker(QThread):
             self._marcar(num, titulo, caminho, "Erro")
             print(f"Erro ao abrir a aula '{titulo}': {erro}")
             return "Erro"
-        self._anexos(pagina, pasta)
         self._descricao(pagina, aula)
+        if not self._pagina_tem_player(pagina):
+            if os.path.exists(caminho):
+                try:
+                    os.remove(caminho)
+                except OSError:
+                    pass
+            self._marcar(num, titulo, "-", "Sem vídeo")
+            return "Sem vídeo"
         self._abrir_aula_no_chrome(driver, aula)
+        video = self._url_do_video(pagina, driver)
+        arquivos = self._anexos(pagina, pasta, forcar=not video or video == "protegido")
         if os.path.exists(caminho) and os.path.getsize(caminho) > 0:
             self.item_progresso.emit(num, 100)
             self._marcar(num, titulo, caminho, "Concluído")
             return "Concluído"
-        video = self._url_do_video(pagina, driver)
-        if video == "protegido":
+        if video == "protegido" and not arquivos:
             self._marcar(num, titulo, caminho, "Protegido")
             return "Protegido"
         if not video:
+            if arquivos:
+                origem = arquivos[0]
+                ext = os.path.splitext(origem)[1] or ".pdf"
+                destino_arquivo = os.path.join(pasta, f"{nome_arquivo}{ext}")
+                if os.path.abspath(origem) != os.path.abspath(destino_arquivo) and not os.path.exists(destino_arquivo):
+                    os.replace(origem, destino_arquivo)
+                else:
+                    destino_arquivo = origem if os.path.exists(origem) else destino_arquivo
+                self.item_progresso.emit(num, 100)
+                self._marcar(num, titulo, destino_arquivo, "Concluído")
+                return "Concluído"
             self._marcar(num, titulo, "-", "Erro")
             return "Erro"
         try:
@@ -459,6 +584,7 @@ class HotmartWorker(QThread):
         return "Concluído"
 
     def _abrir_aula_no_chrome(self, driver, aula):
+        self._limpar_log(driver)
         if hash_de(driver.current_url) == (aula.get("hash") or ""):
             time.sleep(3)
             return
@@ -472,6 +598,30 @@ class HotmartWorker(QThread):
         driver.get(destino)
         time.sleep(5)
 
+    def _eh_link_de_video(self, endereco):
+        texto = (endereco or "").lower()
+        if not texto or "drive.google." in texto or "docs.google." in texto:
+            return False
+        return any(p in texto for p in ("vimeo.com", "youtube.com", "youtu.be", ".mp4", ".m3u8", "pandavideo", "player.hotmart"))
+
+    def _pagina_tem_player(self, pagina):
+        for media in pagina.get("mediasSrc") or []:
+            if not isinstance(media, dict):
+                continue
+            if self._eh_link_de_video(media.get("mediaSrcUrl") or "") or media.get("mediaCode"):
+                return True
+        conteudo = pagina.get("content") or ""
+        for origem in re.findall(r"""src=["']([^"']+)["']""", conteudo, re.I):
+            if self._eh_link_de_video(origem):
+                return True
+        return False
+
+    def _limpar_log(self, driver):
+        try:
+            driver.get_log("performance")
+        except Exception:
+            pass
+
     def _url_do_video(self, pagina, driver):
         self._referer_video = "https://hotmart.com/"
         for media in pagina.get("mediasSrc") or []:
@@ -479,6 +629,8 @@ class HotmartWorker(QThread):
             if "widevine" in bruto or '"drm":true' in bruto or '"drm": true' in bruto:
                 return "protegido"
             endereco = media.get("mediaSrcUrl") or ""
+            if "drive.google." in endereco.lower() or "docs.google." in endereco.lower():
+                continue
             if any(p in endereco.lower() for p in ("vimeo.com", "youtube.com", "youtu.be", ".mp4", ".m3u8", "pandavideo")):
                 if "player.vimeo.com" not in endereco and "vimeo.com/" in endereco:
                     ident = endereco.split("vimeo.com/")[-1].split("?")[0].strip("/")
@@ -496,7 +648,7 @@ class HotmartWorker(QThread):
                 if playlist:
                     self._referer_video = embed
                     return playlist
-        visto = self._m3u8_do_chrome(driver)
+        visto = self._m3u8_do_chrome(driver) if self._pagina_tem_player(pagina) else ""
         if visto:
             self._referer_video = driver.current_url or self._referer_video
             return visto
@@ -682,15 +834,17 @@ class HotmartWorker(QThread):
         por_modulo = "Mesma Pasta" not in estrutura
         sequencial = "Original" not in midias
         pasta = os.path.join(self.destino, f"01 - {nome_curso}")
-        if por_modulo:
+        mesmo_nome = normalizar(aula.get("titulo_mod")) == normalizar(nome_curso)
+        if por_modulo and not mesmo_nome:
             pasta = os.path.join(pasta, f"{aula['num_mod']:02d} - {aula['titulo_mod']}")
         numero = aula["num_aula"] if por_modulo else indice_global
         nome = f"{numero:02d} - {aula['titulo']}" if sequencial else aula["titulo"]
         return pasta, nome
 
-    def _anexos(self, pagina, pasta):
-        if not self.opcoes.get("baixar_anexos"):
-            return
+    def _anexos(self, pagina, pasta, forcar=False):
+        if not forcar and not self.opcoes.get("baixar_anexos"):
+            return []
+        salvos = []
         for anexo in pagina.get("attachments") or []:
             ident = anexo.get("fileMembershipId") or anexo.get("id")
             nome = limpar_nome(anexo.get("fileName") or anexo.get("name") or "anexo")
@@ -698,6 +852,7 @@ class HotmartWorker(QThread):
                 continue
             destino = os.path.join(pasta, nome)
             if os.path.exists(destino) and os.path.getsize(destino) > 0:
+                salvos.append(destino)
                 continue
             try:
                 resposta = self._sessao.get(f"{ANEXO}/{ident}/download", timeout=60)
@@ -705,8 +860,10 @@ class HotmartWorker(QThread):
                     continue
                 with open(destino, "wb") as arquivo:
                     arquivo.write(resposta.content)
+                salvos.append(destino)
             except Exception as erro:
                 print(f"Anexo '{nome}' não baixou: {erro}")
+        return salvos
 
     def _descricao(self, pagina, aula):
         if not self.opcoes.get("gerar_txt"):
@@ -730,7 +887,7 @@ class HotmartWorker(QThread):
             print(f"Erro ao salvar o índice: {erro}")
 
     def _marcar(self, num, titulo, caminho, status):
-        self.item_progresso.emit(num, 100 if status in ("Concluído", "Erro", "Protegido") else 0)
+        self.item_progresso.emit(num, 100 if status in ("Concluído", "Erro", "Protegido", "Sem vídeo") else 0)
         self.item_concluido.emit({
             "num": num,
             "titulo": titulo,

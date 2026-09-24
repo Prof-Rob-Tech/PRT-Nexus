@@ -620,6 +620,9 @@ class HotmartView(QWidget):
                 if status == "Concluído":
                     pbar.setValue(100)
                     pbar.setFormat("Concluído (100%)")
+                elif status == "Sem vídeo":
+                    pbar.setValue(100)
+                    pbar.setFormat("Sem vídeo")
                 elif status in ("Erro", "Protegido"):
                     pbar.setValue(100)
                     pbar.setFormat(status)
