@@ -359,7 +359,7 @@ class KiwifyWorker(QThread):
             self._marcar(num, titulo, caminho, "Concluído")
             return "Concluído"
         try:
-            self._baixar_video(video, caminho, num, titulo, indice, total)
+            salvo = self._baixar_video(video, caminho, num, titulo, indice, total)
         except DownloadCancelado:
             self._cancelado = True
             return "Erro"
@@ -370,7 +370,7 @@ class KiwifyWorker(QThread):
             print(f"Erro na Kiwify para '{titulo}': {erro}")
             return status
         self.item_progresso.emit(num, 100)
-        self._marcar(num, titulo, caminho, "Concluído")
+        self._marcar(num, titulo, salvo, "Concluído")
         return "Concluído"
 
     def _detalhe_da_aula(self, lesson_id):
@@ -562,14 +562,18 @@ class KiwifyWorker(QThread):
         if not salvo:
             pasta = os.path.dirname(caminho)
             prefixo = os.path.basename(raiz)
-            for nome in os.listdir(pasta):
+            for nome in sorted(os.listdir(pasta)):
                 candidato = os.path.join(pasta, nome)
-                if nome.startswith(prefixo) and os.path.isfile(candidato) and os.path.getsize(candidato) > 0 and not nome.endswith(".part"):
+                nome_base, _extensao = os.path.splitext(nome)
+                if nome_base != prefixo or nome.endswith(".part"):
+                    continue
+                if os.path.isfile(candidato) and os.path.getsize(candidato) > 0:
                     salvo = candidato
                     break
         if not salvo:
             raise RuntimeError("o arquivo não foi salvo")
         self._trocar_opus_por_aac(salvo)
+        return salvo
 
     def _ffmpeg(self):
         achado = shutil.which("ffmpeg")
