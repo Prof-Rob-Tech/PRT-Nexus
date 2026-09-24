@@ -214,7 +214,7 @@ class HomeView(QWidget):
             ("Navegador Web", "Navegar e extrair URLs direto de sites", "Navegador"),
             ("Downloads", "Ver gerenciador e histórico de downloads", "Downloads"),
             ("YouTube", "Download de vídeos, playlists e áudio", "YouTube"),
-            ("TikTok", "Extrair vídeos e Reels sem marca d'água", "TikTok"),
+            ("TikTok", "Baixar vídeo público e perfil público, sem login", "TikTok"),
             ("Kiwify", "Acessar conteúdos da plataforma Kiwify", "Kiwify"),
             ("Hotmart", "Acessar áreas de membros da Hotmart", "Hotmart"),
             ("Google Drive", "Baixar arquivos e pastas do Drive", "Google Drive"),
