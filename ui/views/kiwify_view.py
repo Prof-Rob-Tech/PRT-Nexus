@@ -1,253 +1,663 @@
-"""
-===========================================================
-PRT Nexus - Kiwify View
-Class: KiwifyView
-Description: Interface visual do Conector Kiwify com suporte a Login integrativo.
-===========================================================
-"""
-from PySide6.QtCore import QByteArray, Qt, Signal
-from PySide6.QtGui import QPainter, QPixmap
-from PySide6.QtSvg import QSvgRenderer
+import os
+import re
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QFrame,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QMessageBox,
-    QPushButton,
-    QTreeWidget,
-    QTreeWidgetItem,
-    QVBoxLayout,
-    QWidget,
+    QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QGroupBox, QLineEdit, 
+    QComboBox, QPushButton, QMessageBox, QTableWidget, QTableWidgetItem, QProgressBar, 
+    QHeaderView, QFileDialog, QCheckBox, QFrame
 )
-
-from services.extractors.kiwify_connector import KiwifyConnector
-from theme.colors import ThemeColors
-
-KIWIFY_SVG = '<svg viewBox="0 0 24 24"><path fill="#00B563" d="M18.8 17.3C17.1 19.5 14.5 20.8 11.6 20.8C6.3 20.8 2 16.5 2 11.2C2 7.7 3.9 4.6 6.8 2.9C7.3 2.6 8 3 8 3.6C8 3.8 7.9 4 7.8 4.2C5.3 5.7 3.8 8.3 3.8 11.2C3.8 15.5 7.3 19 11.6 19C13.9 19 16 18 17.4 16.3C17.7 15.9 18.3 15.9 18.7 16.2C19.1 16.5 19.1 17 18.8 17.3Z"/><ellipse cx="7.2" cy="10.8" rx="0.9" ry="1.8" transform="rotate(-50 7.2 10.8)" fill="#00B563"/><ellipse cx="8.8" cy="13.5" rx="0.9" ry="1.8" transform="rotate(-25 8.8 13.5)" fill="#00B563"/><ellipse cx="11.2" cy="15.2" rx="0.9" ry="1.8" transform="rotate(0 11.2 15.2)" fill="#00B563"/><ellipse cx="14.2" cy="15.8" rx="0.9" ry="1.8" transform="rotate(30 14.2 15.8)" fill="#00B563"/></svg>'
-
-
-def get_kiwify_pixmap(size: int = 28) -> QPixmap:
-    renderer = QSvgRenderer(QByteArray(KIWIFY_SVG.encode("utf-8")))
-    pixmap = QPixmap(size, size)
-    pixmap.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pixmap)
-    renderer.render(painter)
-    painter.end()
-    return pixmap
+from services.extractors.kiwify_connector import KiwifyWorker
 
 
 class KiwifyView(QWidget):
-    """Visualização do Conector Kiwify."""
-
-    send_to_downloader = Signal(str)
-    open_login_browser = Signal(str)
-
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent=None, downloads_view=None):
         super().__init__(parent)
-        self.connector = KiwifyConnector()
-        self.setup_ui()
+        self.downloads_view = downloads_view
+        self.worker = None
 
-    def setup_ui(self) -> None:
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(24, 24, 24, 24)
-        main_layout.setSpacing(16)
+        self._montar_interface()
+        self._aplicar_estilos()
+        self._conectar_acoes()
 
-        # Header / Título
-        header_layout = QHBoxLayout()
-        header_layout.setContentsMargins(0, 0, 0, 0)
-        header_layout.setSpacing(10)
+    def _aplicar_estilos(self):
+        """Aplica estilo dark com os títulos assentados perfeitamente na linha da borda."""
+        self.setStyleSheet("""
+            /* Fundo principal da janela */
+            QWidget {
+                background-color: #1e1e1e;
+                color: #ffffff;
+            }
 
-        lbl_icon = QLabel()
-        lbl_icon.setPixmap(get_kiwify_pixmap(28))
-
-        lbl_title = QLabel("Conector Kiwify")
-        lbl_title.setStyleSheet(f"font-size: 22px; font-weight: bold; color: {ThemeColors.TEXT};")
-
-        btn_login = QPushButton("🔑 Fazer Login na Kiwify")
-        btn_login.setFixedHeight(34)
-        btn_login.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_login.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {ThemeColors.CARD};
-                color: {ThemeColors.TEXT};
-                border: 1px solid {ThemeColors.BORDER};
-                border-radius: 6px;
-                padding: 0 14px;
-                font-weight: bold;
-            }}
-            QPushButton:hover {{
-                background-color: {ThemeColors.BACKGROUND};
-                border-color: #00B563;
-            }}
-        """)
-        btn_login.clicked.connect(lambda: self.open_login_browser.emit("https://dashboard.kiwify.com/courses"))
-
-        header_layout.addWidget(lbl_icon)
-        header_layout.addWidget(lbl_title)
-        header_layout.addStretch()
-        header_layout.addWidget(btn_login)
-
-        main_layout.addLayout(header_layout)
-
-        lbl_subtitle = QLabel("Extraia e baixe vídeos e materiais de cursos hospedados na área de membros Kiwify.")
-        lbl_subtitle.setStyleSheet(f"font-size: 13px; color: {ThemeColors.TEXT_SECONDARY}; margin-bottom: 8px;")
-        main_layout.addWidget(lbl_subtitle)
-
-        # Card de Configuração / URL
-        card_frame = QFrame()
-        card_frame.setStyleSheet(f"""
-            QFrame {{
-                background-color: {ThemeColors.CARD};
-                border: 1px solid {ThemeColors.BORDER};
+            /* Estilo Global dos GroupBoxes */
+            QGroupBox {
+                background-color: #1e1e1e;
+                border: 1px solid #333333;
                 border-radius: 8px;
-            }}
-        """)
-        card_layout = QVBoxLayout(card_frame)
-        card_layout.setContentsMargins(16, 16, 16, 16)
-        card_layout.setSpacing(12)
-
-        lbl_url = QLabel("URL da Aula ou Curso Kiwify:")
-        lbl_url.setStyleSheet(f"color: {ThemeColors.TEXT}; font-weight: bold; font-size: 12px; border: none;")
-        card_layout.addWidget(lbl_url)
-
-        input_layout = QHBoxLayout()
-        input_layout.setSpacing(8)
-
-        self.url_input = QLineEdit()
-        self.url_input.setPlaceholderText("https://members.kiwify.com.br/...")
-        self.url_input.setFixedHeight(38)
-        self.url_input.setStyleSheet(f"""
-            QLineEdit {{
-                background-color: {ThemeColors.BACKGROUND};
-                color: {ThemeColors.TEXT};
-                border: 1px solid {ThemeColors.BORDER};
-                border-radius: 6px;
-                padding: 0 12px;
-            }}
-        """)
-        input_layout.addWidget(self.url_input)
-
-        self.btn_fetch = QPushButton("Analisar Link")
-        self.btn_fetch.setFixedHeight(38)
-        self.btn_fetch.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_fetch.setStyleSheet("""
-            QPushButton {
-                background-color: #00B563;
-                color: #FFFFFF;
+                margin-top: 4px;
+                padding-top: 22px;
+                padding-bottom: 8px;
+                font-size: 13px;
                 font-weight: bold;
-                border: none;
-                border-radius: 6px;
-                padding: 0 18px;
+                color: #ffffff;
             }
-            QPushButton:hover {
-                background-color: #009652;
+
+            /* Título dentro do card, abaixo da borda */
+            QGroupBox::title {
+                subcontrol-origin: padding;
+                subcontrol-position: top left;
+                left: 10px;
+                top: 6px;
+                padding: 0 4px;
+                background-color: transparent;
+                color: #ffffff;
             }
-        """)
-        self.btn_fetch.clicked.connect(self._on_fetch_clicked)
-        input_layout.addWidget(self.btn_fetch)
+            QFrame#gb_tabela {
+                background-color: #1e1e1e;
+                border: 1px solid #3c3c3c;
+                border-radius: 12px;
+            }
 
-        card_layout.addLayout(input_layout)
-
-        lbl_cookie = QLabel("Cookie de Sessão / Token (Opcional - preenchido automaticamente ao logar):")
-        lbl_cookie.setStyleSheet(f"color: {ThemeColors.TEXT_SECONDARY}; font-size: 11px; border: none; padding-top: 4px;")
-        card_layout.addWidget(lbl_cookie)
-
-        self.cookie_input = QLineEdit()
-        self.cookie_input.setPlaceholderText("Cole o cookie de autenticação caso queira autenticar manualmente...")
-        self.cookie_input.setFixedHeight(34)
-        self.cookie_input.setStyleSheet(f"""
-            QLineEdit {{
-                background-color: {ThemeColors.BACKGROUND};
-                color: {ThemeColors.TEXT_SECONDARY};
-                border: 1px solid {ThemeColors.BORDER};
+            QLineEdit, QComboBox {
+                background-color: #252526;
+                border: 1px solid #3a3a3a;
                 border-radius: 6px;
-                padding: 0 10px;
+                color: #ffffff;
+                padding: 6px 10px;
                 font-size: 12px;
-            }}
-        """)
-        card_layout.addWidget(self.cookie_input)
+            }
+            QLineEdit:focus, QComboBox:focus {
+                border: 1px solid #0066cc;
+            }
 
-        main_layout.addWidget(card_frame)
-
-        # Árvore de Módulos e Aulas
-        lbl_results = QLabel("Conteúdo Identificado:")
-        lbl_results.setStyleSheet(f"font-weight: bold; color: {ThemeColors.TEXT}; font-size: 13px;")
-        main_layout.addWidget(lbl_results)
-
-        self.tree_widget = QTreeWidget()
-        self.tree_widget.setHeaderLabels(["Título da Aula / Módulo", "Tipo", "Status"])
-        self.tree_widget.setColumnWidth(0, 450)
-        self.tree_widget.setStyleSheet(f"""
-            QTreeWidget {{
-                background-color: {ThemeColors.CARD};
-                color: {ThemeColors.TEXT};
-                border: 1px solid {ThemeColors.BORDER};
-                border-radius: 8px;
-            }}
-            QHeaderView::section {{
-                background-color: {ThemeColors.BACKGROUND};
-                color: {ThemeColors.TEXT};
-                padding: 6px;
-                border: none;
-                font-weight: bold;
-            }}
-        """)
-        main_layout.addWidget(self.tree_widget, stretch=1)
-
-        # Rodapé
-        actions_layout = QHBoxLayout()
-        actions_layout.addStretch()
-
-        self.btn_download = QPushButton("Enviar Aulas Selecionadas para Downloads")
-        self.btn_download.setFixedHeight(40)
-        self.btn_download.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_download.setStyleSheet("""
-            QPushButton {
-                background-color: #00B563;
-                color: #FFFFFF;
-                font-weight: bold;
-                border: none;
+            QLabel.lbl-box {
+                background-color: #252526;
+                border: 1px solid #3a3a3a;
                 border-radius: 6px;
-                padding: 0 20px;
+                color: #cccccc;
+                padding: 6px 10px;
+                font-size: 12px;
             }
-            QPushButton:hover {
-                background-color: #009652;
+
+            QCheckBox {
+                color: #cccccc;
+                font-size: 12px;
+                spacing: 8px;
+                background-color: transparent;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+                border-radius: 4px;
+                border: 1px solid #444444;
+                background-color: #252526;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #0066cc;
+                border-color: #0066cc;
+            }
+
+            QPushButton#btn_alterar {
+                background-color: #333333;
+                color: #ffffff;
+                border: 1px solid #444444;
+                border-radius: 6px;
+                padding: 5px 14px;
+                font-weight: bold;
+            }
+            QPushButton#btn_alterar:hover {
+                background-color: #444444;
+            }
+
+            QPushButton#btn_pausar, QPushButton#btn_cancelar {
+                background-color: #2b2b2b;
+                color: #ffffff;
+                border: 1px solid #3a3a3a;
+                border-radius: 6px;
+                padding: 5px 12px;
+                font-weight: bold;
+                font-size: 11px;
+            }
+            QPushButton#btn_pausar:hover {
+                background-color: #3a3a3a;
+            }
+            QPushButton#btn_cancelar:hover {
+                background-color: #8b0000;
+            }
+
+            QPushButton#btn_limpar {
+                background-color: #2b2b2b;
+                color: #aaaaaa;
+                border: 1px solid #3a3a3a;
+                border-radius: 6px;
+                padding: 4px 10px;
+                font-size: 11px;
+                font-weight: bold;
+            }
+            QPushButton#btn_limpar:hover {
+                background-color: #c0392b;
+                color: #ffffff;
             }
         """)
-        self.btn_download.clicked.connect(self._on_download_clicked)
-        actions_layout.addWidget(self.btn_download)
+            
+    def _montar_interface(self):
+        layout_principal = QVBoxLayout(self)
+        layout_principal.setContentsMargins(15, 15, 15, 15)
+        layout_principal.setSpacing(10)
 
-        main_layout.addLayout(actions_layout)
+        # Cabeçalho Principal (Mantida a fonte de 22px)
+        lbl_titulo = QLabel("Conector Kiwify")
+        lbl_titulo.setStyleSheet("font-size: 24px; font-weight: bold; color: #ffffff;")
+        lbl_sub = QLabel("Entre na área de membros e baixe as aulas do curso que você já comprou.")
+        lbl_sub.setStyleSheet("font-size: 14px; color: #888888;")
+        layout_principal.addWidget(lbl_titulo)
+        layout_principal.addWidget(lbl_sub)
 
-    def _on_fetch_clicked(self) -> None:
-        url = self.url_input.text().strip()
-        cookie = self.cookie_input.text().strip()
+        # Área Superior (Duas Colunas)
+        layout_top = QHBoxLayout()
+        layout_top.setSpacing(12)
 
-        if not url:
-            QMessageBox.warning(self, "Aviso", "Por favor, insira a URL da aula ou do curso Kiwify.")
+        # ================= COLUNA ESQUERDA =================
+        ly_esq = QVBoxLayout()
+        ly_esq.setSpacing(10)
+
+        # 1. Captura de Mídia
+        gb_captura = QGroupBox("🔗 Captura de Mídia - Kiwify")
+        ly_captura = QVBoxLayout(gb_captura)
+        ly_captura.setContentsMargins(10, 10, 10, 10)
+        ly_captura.setSpacing(8)
+
+        self.txt_url = QLineEdit()
+        self.txt_url.setPlaceholderText("https://dashboard.kiwify.com.br/course/...")
+        ly_captura.addWidget(self.txt_url)
+
+        ly_aula = QHBoxLayout()
+        lbl_aula = QLabel("Aula:")
+        lbl_aula.setProperty("class", "lbl-box")
+        self.txt_aula = QLineEdit()
+        self.txt_aula.setPlaceholderText("Nome no menu, ex.: Mentoria Técnica: Aula 1")
+        ly_aula.addWidget(lbl_aula)
+        ly_aula.addWidget(self.txt_aula, stretch=1)
+        ly_captura.addLayout(ly_aula)
+
+        ly_qual = QHBoxLayout()
+        lbl_qual = QLabel("Qualidade:")
+        lbl_qual.setProperty("class", "lbl-box")
+        self.cmb_qualidade = QComboBox()
+        self.cmb_qualidade.addItems([
+            "Vídeo - Max Qualidade (MP4)",
+            "Vídeo - 1080p (MP4)",
+            "Vídeo - 720p (MP4)",
+            "Apenas Áudio (MP3)"
+        ])
+        ly_qual.addWidget(lbl_qual)
+        ly_qual.addWidget(self.cmb_qualidade, stretch=1)
+        ly_captura.addLayout(ly_qual)
+
+        ly_btns = QHBoxLayout()
+        self.btn_avulso = QPushButton("⚡ Baixar Mídia Avulsa")
+        self.btn_avulso.setStyleSheet("background-color: #0066cc; color: white; font-weight: bold; padding: 8px; border-radius: 8px; border: none;")
+        
+        self.btn_curso = QPushButton("🗺️ Mapear e Baixar Curso")
+        self.btn_curso.setStyleSheet("background-color: #00B563; color: white; font-weight: bold; padding: 8px; border-radius: 8px; border: none;")
+        
+        ly_btns.addWidget(self.btn_avulso)
+        ly_btns.addWidget(self.btn_curso)
+        ly_captura.addLayout(ly_btns)
+
+        ly_esq.addWidget(gb_captura)
+
+        # 2. Autenticação
+        gb_auth = QGroupBox("🔐 Autenticação (Áreas Pagas / Privadas)")
+        form_auth = QFormLayout(gb_auth)
+        form_auth.setContentsMargins(10, 10, 10, 10)
+        form_auth.setSpacing(8)
+
+        self.txt_email = QLineEdit()
+        self.txt_email.setPlaceholderText("digite seu e-mail da Kiwify")
+        self.txt_senha = QLineEdit()
+        self.txt_senha.setEchoMode(QLineEdit.EchoMode.Password)
+        self.txt_senha.setPlaceholderText("digite sua senha")
+
+        lbl_email = QLabel("E-mail / Usuário")
+        lbl_email.setProperty("class", "lbl-box")
+        lbl_senha = QLabel("Senha")
+        lbl_senha.setProperty("class", "lbl-box")
+
+        form_auth.addRow(lbl_email, self.txt_email)
+        form_auth.addRow(lbl_senha, self.txt_senha)
+
+        ly_esq.addWidget(gb_auth)
+
+        # 3. Pasta de Destino
+        gb_destino = QGroupBox("📁 Pasta de Destino")
+        ly_dest = QHBoxLayout(gb_destino)
+        ly_dest.setContentsMargins(10, 10, 10, 10)
+        self.txt_destino = QLineEdit(os.path.join(os.path.expanduser("~"), "Downloads", "PRT_Nexus"))
+        self.btn_alterar_dest = QPushButton("Alterar")
+        self.btn_alterar_dest.setObjectName("btn_alterar")
+        ly_dest.addWidget(self.txt_destino)
+        ly_dest.addWidget(self.btn_alterar_dest)
+
+        ly_esq.addWidget(gb_destino)
+
+        layout_top.addLayout(ly_esq, stretch=1)
+
+        # ================= COLUNA DIREITA =================
+        ly_dir = QVBoxLayout()
+        ly_dir.setSpacing(10)
+
+        # Organização de Pastas
+        gb_org = QGroupBox("📁 Organização de Pastas (Curso / Playlist)")
+        form_org = QFormLayout(gb_org)
+        form_org.setContentsMargins(10, 10, 10, 10)
+        form_org.setSpacing(12)
+
+        lbl_nome_cnt = QLabel("Nome do Conteúdo")
+        lbl_nome_cnt.setProperty("class", "lbl-box")
+        self.txt_nome_conteudo = QLineEdit("")
+        self.txt_nome_conteudo.setPlaceholderText("Vazio usa o nome do curso na Kiwify")
+        
+        lbl_est = QLabel("Estrutura")
+        lbl_est.setProperty("class", "lbl-box")
+        self.cmb_estrutura = QComboBox()
+        self.cmb_estrutura.addItems([
+            "Organizado Automaticamente por Módulo",
+            "Todos os Vídeos na Mesma Pasta"
+        ])
+
+        lbl_mid = QLabel("Mídias")
+        lbl_mid.setProperty("class", "lbl-box")
+        self.cmb_midias = QComboBox()
+        self.cmb_midias.addItems([
+            "Extração Sequencial de Vídeos (01 -, 02 -)",
+            "Manter Nome Original do Vídeo"
+        ])
+
+        form_org.addRow(lbl_nome_cnt, self.txt_nome_conteudo)
+        form_org.addRow(lbl_est, self.cmb_estrutura)
+        form_org.addRow(lbl_mid, self.cmb_midias)
+
+        ly_dir.addWidget(gb_org)
+
+        # Opções Adicionais
+        gb_opcoes = QGroupBox("⚙️ Opções Extras de Extração")
+        ly_opcoes = QVBoxLayout(gb_opcoes)
+        ly_opcoes.setContentsMargins(12, 12, 12, 12)
+        ly_opcoes.setSpacing(10)
+
+        self.chk_anexos = QCheckBox("Baixar materiais anexos das aulas (PDFs, ZIPs, Apostilas)")
+        self.chk_anexos.setChecked(True)
+        self.chk_txt = QCheckBox("Gerar arquivo .txt com índice e descrição das aulas")
+        self.chk_notif = QCheckBox("Notificar com som ao concluir todos os downloads")
+
+        ly_opcoes.addWidget(self.chk_anexos)
+        ly_opcoes.addWidget(self.chk_txt)
+        ly_opcoes.addWidget(self.chk_notif)
+
+        ly_dir.addWidget(gb_opcoes)
+
+        layout_top.addLayout(ly_dir, stretch=1)
+        layout_principal.addLayout(layout_top)
+
+        # ================= BARRA DE PROGRESSO GERAL & CONTROLES =================
+        ly_prog_geral = QHBoxLayout()
+        
+        self.lbl_status_global = QLabel("Aguardando link de download...")
+        self.lbl_status_global.setStyleSheet("""
+            background-color: #1e1e1e;
+            border: 1px solid #3a3a3a;
+            border-radius: 8px;
+            color: #aaaaaa;
+            font-size: 11px;
+            padding: 5px 10px;
+        """)
+
+        self.lbl_velocidade = QLabel("-- MiB/s | ETA: --:--")
+        self.lbl_velocidade.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_velocidade.setStyleSheet("""
+            background-color: #1e1e1e;
+            border: 1px solid #3a3a3a;
+            border-radius: 8px;
+            color: #aaaaaa;
+            font-size: 11px;
+            padding: 5px 10px;
+        """)
+
+        self.pbar_global = QProgressBar()
+        self.pbar_global.setRange(0, 100)
+        self.pbar_global.setValue(0)
+        self.pbar_global.setTextVisible(True)
+        self.pbar_global.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.pbar_global.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #3a3a3a;
+                border-radius: 8px;
+                text-align: center;
+                background-color: #1e1e1e;
+                color: #ffffff;
+                font-size: 11px;
+            }
+            QProgressBar::chunk {
+                background-color: #2ecc71;
+                border-radius: 6px;
+            }
+        """)
+
+        self.btn_pausar = QPushButton("⏸️ Pausar")
+        self.btn_pausar.setObjectName("btn_pausar")
+        self.btn_pausar.setEnabled(False)
+
+        self.btn_cancelar = QPushButton("⏹️ Cancelar")
+        self.btn_cancelar.setObjectName("btn_cancelar")
+        self.btn_cancelar.setEnabled(False)
+
+        ly_prog_geral.addWidget(self.lbl_status_global, stretch=2)
+        ly_prog_geral.addWidget(self.lbl_velocidade, stretch=1)
+        ly_prog_geral.addWidget(self.pbar_global, stretch=1)
+        ly_prog_geral.addWidget(self.btn_pausar)
+        ly_prog_geral.addWidget(self.btn_cancelar)
+
+        layout_principal.addLayout(ly_prog_geral)
+
+        # ================= TABELA DE MÍDIAS =================
+        gb_tabela = QFrame()
+        gb_tabela.setObjectName("gb_tabela")
+        ly_tab = QVBoxLayout(gb_tabela)
+        ly_tab.setContentsMargins(10, 8, 10, 8)
+        ly_tab.setSpacing(6)
+
+        # Cabeçalho Horizontal
+        ly_tab_top = QHBoxLayout()
+        ly_tab_top.setContentsMargins(0, 0, 0, 0)
+        ly_tab_top.setSpacing(8)
+
+        lbl_tab_title = QLabel("📦 Mídias da Kiwify (Duplo clique para abrir a pasta)")
+        lbl_tab_title.setStyleSheet(
+            "font-size: 13px; font-weight: bold; color: #ffffff; background: transparent; border: none; padding: 0;"
+        )
+        lbl_tab_title.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        ly_tab_top.addWidget(lbl_tab_title, 1, Qt.AlignmentFlag.AlignVCenter)
+
+        self.btn_limpar = QPushButton("🗑️ Limpar Concluídos")
+        self.btn_limpar.setObjectName("btn_limpar")
+        ly_tab_top.addWidget(self.btn_limpar, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        ly_tab.addLayout(ly_tab_top)
+
+        self.tabela = QTableWidget(0, 4)
+        self.tabela.verticalHeader().setVisible(False)
+        self.tabela.setHorizontalHeaderLabels(["#", "Título / Nome do Arquivo", "Caminho Salvo", "Status"])
+        self.tabela.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        header = self.tabela.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
+        header.setStretchLastSection(True)
+
+        self.tabela.setColumnWidth(0, 45)
+        self.tabela.setColumnWidth(1, 300)
+        self.tabela.setColumnWidth(2, 400)
+
+        self._configurar_estilo_tabela(self.tabela)
+        ly_tab.addWidget(self.tabela)
+
+        layout_principal.addWidget(gb_tabela)
+
+    def _configurar_estilo_tabela(self, tabela):
+        tabela.setShowGrid(True)
+        tabela.setStyleSheet("""
+            QTableWidget {
+                gridline-color: #3a3a3a;
+                background-color: #1a1a1a;
+                border: 1px solid #3a3a3a;
+                border-radius: 10px;
+            }
+            QTableWidget::item {
+                border: none;
+                padding: 4px;
+                color: #ffffff;
+            }
+            QHeaderView::section {
+                background-color: #2b2b2b;
+                color: #ffffff;
+                border-right: 1px solid #3a3a3a;
+                border-bottom: 1px solid #3a3a3a;
+                border-top: none;
+                border-left: none;
+                padding: 6px;
+                font-weight: bold;
+            }
+        """)
+
+    def _conectar_acoes(self):
+        self.btn_avulso.clicked.connect(lambda: self._iniciar_download(modo_avulso=True))
+        self.btn_curso.clicked.connect(lambda: self._iniciar_download(modo_avulso=False))
+        self.btn_alterar_dest.clicked.connect(self._selecionar_pasta_destino)
+        self.btn_pausar.clicked.connect(self._toggle_pausar_resumir)
+        self.btn_cancelar.clicked.connect(self._cancelar_download)
+        self.btn_limpar.clicked.connect(self._limpar_concluidos)
+        self.tabela.itemDoubleClicked.connect(self._abrir_item_tabela)
+
+    def _selecionar_pasta_destino(self):
+        pasta = QFileDialog.getExistingDirectory(self, "Selecionar Pasta de Destino", self.txt_destino.text())
+        if pasta:
+            self.txt_destino.setText(pasta)
+
+    def _abrir_item_tabela(self, item):
+        row = item.row()
+        caminho_item = self.tabela.item(row, 2)
+        if caminho_item and caminho_item.text():
+            caminho = caminho_item.text()
+            if os.path.exists(caminho):
+                if os.path.isfile(caminho):
+                    caminho = os.path.dirname(caminho)
+                QDesktopServices.openUrl(QUrl.fromLocalFile(caminho))
+
+    def _toggle_pausar_resumir(self):
+        if not self.worker or not self.worker.isRunning():
             return
 
-        if cookie:
-            self.connector.set_auth_token(cookie)
+        if self.btn_pausar.text() == "⏸️ Pausar":
+            self.btn_pausar.setText("▶️ Retomar")
+            if hasattr(self.worker, 'pausar'):
+                self.worker.pausar()
+        else:
+            self.btn_pausar.setText("⏸️ Pausar")
+            if hasattr(self.worker, 'resumir'):
+                self.worker.resumir()
 
-        info = self.connector.fetch_course_info(url)
-        if not info.get("success"):
-            QMessageBox.critical(self, "Erro", info.get("error", "Erro ao carregar link."))
+    def _cancelar_download(self):
+        if self.worker and self.worker.isRunning():
+            if hasattr(self.worker, "cancelar"):
+                self.worker.cancelar()
+            self.worker.terminate()
+            self.worker.wait()
+            self.lbl_status_global.setText("Download cancelado pelo usuário.")
+            self.lbl_velocidade.setText("-- MiB/s | ETA: --:--")
+            self.pbar_global.setValue(0)
+            self._remover_linhas_incompletas()
+
+            self.btn_avulso.setEnabled(True)
+            self.btn_curso.setEnabled(True)
+            self.btn_pausar.setEnabled(False)
+            self.btn_cancelar.setEnabled(False)
+            self.btn_pausar.setText("⏸️ Pausar")
+
+    def _limpar_concluidos(self):
+        em_andamento = bool(self.worker and self.worker.isRunning())
+        for row in reversed(range(self.tabela.rowCount())):
+            pbar = self.tabela.cellWidget(row, 3)
+            if not isinstance(pbar, QProgressBar):
+                continue
+            if pbar.value() >= 100 or not em_andamento:
+                self.tabela.removeRow(row)
+
+    def _remover_linhas_incompletas(self):
+        for row in reversed(range(self.tabela.rowCount())):
+            pbar = self.tabela.cellWidget(row, 3)
+            if isinstance(pbar, QProgressBar) and pbar.value() < 100:
+                self.tabela.removeRow(row)
+
+    def _iniciar_download(self, modo_avulso):
+        url = self.txt_url.text().strip()
+        email = self.txt_email.text().strip()
+        senha = self.txt_senha.text().strip()
+        destino = self.txt_destino.text().strip()
+
+        if not url or not email or not senha:
+            QMessageBox.warning(self, "Campos Vazios", "Preencha o Link, E-mail e Senha antes de iniciar!")
             return
 
-        self.tree_widget.clear()
-        for mod in info.get("modules", []):
-            mod_item = QTreeWidgetItem(self.tree_widget, [mod["module_name"], "Módulo", ""])
-            mod_item.setExpanded(True)
-            for lesson in mod.get("lessons", []):
-                QTreeWidgetItem(mod_item, [lesson["title"], lesson["type"].capitalize(), lesson["status"]])
-
-    def _on_download_clicked(self) -> None:
-        url = self.url_input.text().strip()
-        if not url:
-            QMessageBox.warning(self, "Aviso", "Nenhum link ativo para baixar.")
+        nome_aula = self.txt_aula.text().strip()
+        if modo_avulso and not nome_aula:
+            QMessageBox.warning(
+                self,
+                "Nome da aula",
+                "Digite o nome da aula como aparece no menu do curso.",
+            )
             return
 
-        self.send_to_downloader.emit(url)
-        QMessageBox.information(self, "Sucesso", "Link enviado para a fila de downloads!")
+        opcoes = {
+            "baixar_anexos": self.chk_anexos.isChecked(),
+            "gerar_txt": self.chk_txt.isChecked(),
+            "notificar_som": self.chk_notif.isChecked(),
+            "qualidade": self.cmb_qualidade.currentText(),
+            "nome_conteudo": self.txt_nome_conteudo.text().strip(),
+            "estrutura": self.cmb_estrutura.currentText(),
+            "midias": self.cmb_midias.currentText(),
+            "nome_aula": nome_aula,
+        }
+
+        self.btn_avulso.setEnabled(False)
+        self.btn_curso.setEnabled(False)
+        self.btn_pausar.setEnabled(True)
+        self.btn_cancelar.setEnabled(True)
+        self.btn_pausar.setText("⏸️ Pausar")
+
+        self.worker = KiwifyWorker(url, email, senha, destino, modo_avulso=modo_avulso, opcoes=opcoes)
+        self.worker.progresso.connect(self._on_progresso)
+        self.worker.velocidade.connect(self._on_velocidade)
+        self.worker.item_progresso.connect(self._on_item_progresso)
+        self.worker.item_concluido.connect(self._on_item_concluido)
+        self.worker.concluido.connect(self._on_concluido)
+        self.worker.start()
+
+    def _on_concluido(self, sucesso, mensagem):
+        self.btn_avulso.setEnabled(True)
+        self.btn_curso.setEnabled(True)
+        self.btn_pausar.setEnabled(False)
+        self.btn_cancelar.setEnabled(False)
+
+        if self.chk_notif.isChecked():
+            from PySide6.QtWidgets import QApplication
+            QApplication.beep()
+
+        if sucesso:
+            QMessageBox.information(self, "Kiwify", mensagem)
+        else:
+            QMessageBox.critical(self, "Kiwify - Erro", mensagem)
+
+    def _on_progresso(self, msg, pct):
+        self.pbar_global.setValue(pct)
+        self.lbl_status_global.setText(msg)
+
+    def _on_velocidade(self, texto):
+        self.lbl_velocidade.setText(texto)
+
+    def _criar_barra_status(self):
+        pbar = QProgressBar()
+        pbar.setRange(0, 100)
+        pbar.setValue(0)
+        pbar.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        pbar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #3a3a3a;
+                border-radius: 6px;
+                text-align: center;
+                background-color: #1e1e1e;
+                color: #ffffff;
+                font-size: 11px;
+                font-weight: bold;
+            }
+            QProgressBar::chunk {
+                background-color: #2ecc71;
+                border-radius: 4px;
+            }
+        """)
+        return pbar
+
+    def _on_item_progresso(self, num_str, pct):
+        for row in range(self.tabela.rowCount()):
+            item_num = self.tabela.item(row, 0)
+            if item_num and item_num.text() == str(num_str):
+                pbar = self.tabela.cellWidget(row, 3)
+                if isinstance(pbar, QProgressBar):
+                    pbar.setValue(int(pct))
+                break
+
+    def _on_item_concluido(self, item):
+        num = str(item.get("num", ""))
+        titulo_bruto = str(item.get("titulo", ""))
+        caminho = str(item.get("caminho", ""))
+        status = str(item.get("status", ""))
+
+        titulo_exibicao = re.sub(r'^\d{2}\s+-\s+', '', titulo_bruto)
+        titulo_exibicao = titulo_exibicao.replace('_', ' ').strip()
+
+        linha_existente = -1
+        for row in range(self.tabela.rowCount()):
+            item_num = self.tabela.item(row, 0)
+            if item_num and item_num.text() == num:
+                linha_existente = row
+                break
+
+        if linha_existente >= 0:
+            pbar = self.tabela.cellWidget(linha_existente, 3)
+            if isinstance(pbar, QProgressBar):
+                if status == "Concluído":
+                    pbar.setValue(100)
+                    pbar.setFormat("Concluído (100%)")
+                elif status == "Sem vídeo":
+                    pbar.setValue(100)
+                    pbar.setFormat("Sem vídeo")
+                elif status in ("Erro", "Protegido"):
+                    pbar.setValue(100)
+                    pbar.setFormat(status)
+                    pbar.setStyleSheet("""
+                        QProgressBar {
+                            border: 1px solid #3a3a3a;
+                            border-radius: 6px;
+                            text-align: center;
+                            background-color: #1e1e1e;
+                            color: #ffffff;
+                            font-size: 11px;
+                            font-weight: bold;
+                        }
+                        QProgressBar::chunk {
+                            background-color: #e74c3c;
+                            border-radius: 4px;
+                        }
+                    """)
+        else:
+            row = self.tabela.rowCount()
+            self.tabela.insertRow(row)
+
+            item_num = QTableWidgetItem(num)
+            item_num.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.tabela.setItem(row, 0, item_num)
+
+            self.tabela.setItem(row, 1, QTableWidgetItem(titulo_exibicao))
+            self.tabela.setItem(row, 2, QTableWidgetItem(caminho))
+
+            pbar = self._criar_barra_status()
+            if status == "Concluído":
+                pbar.setValue(100)
+                pbar.setFormat("Concluído (100%)")
+            else:
+                pbar.setValue(0)
+                pbar.setFormat("%p%")
+
+            self.tabela.setCellWidget(row, 3, pbar)
