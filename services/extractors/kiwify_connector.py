@@ -1,5 +1,7 @@
 import os
 import re
+import shutil
+import subprocess
 import time
 import unicodedata
 
@@ -551,16 +553,63 @@ class KiwifyWorker(QThread):
             "progress_hooks": [hook],
             **formato["ydl"],
         }
+        ffmpeg = self._ffmpeg()
+        if ffmpeg:
+            opcoes["ffmpeg_location"] = ffmpeg
         with yt_dlp.YoutubeDL(opcoes) as ydl:
             ydl.download([url])
-        if os.path.exists(caminho) and os.path.getsize(caminho) > 0:
+        salvo = caminho if os.path.exists(caminho) and os.path.getsize(caminho) > 0 else ""
+        if not salvo:
+            pasta = os.path.dirname(caminho)
+            prefixo = os.path.basename(raiz)
+            for nome in os.listdir(pasta):
+                candidato = os.path.join(pasta, nome)
+                if nome.startswith(prefixo) and os.path.isfile(candidato) and os.path.getsize(candidato) > 0 and not nome.endswith(".part"):
+                    salvo = candidato
+                    break
+        if not salvo:
+            raise RuntimeError("o arquivo não foi salvo")
+        self._trocar_opus_por_aac(salvo)
+
+    def _ffmpeg(self):
+        achado = shutil.which("ffmpeg")
+        if achado:
+            return achado
+        try:
+            import imageio_ffmpeg
+            return imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception:
+            return ""
+
+    def _tem_opus(self, caminho):
+        tamanho = os.path.getsize(caminho)
+        with open(caminho, "rb") as arquivo:
+            if b"Opus" in arquivo.read(min(tamanho, 4_000_000)):
+                return True
+            if tamanho > 4_000_000:
+                arquivo.seek(tamanho - 4_000_000)
+                return b"Opus" in arquivo.read()
+        return False
+
+    def _trocar_opus_por_aac(self, caminho):
+        if not self._tem_opus(caminho):
             return
-        pasta = os.path.dirname(caminho)
-        prefixo = os.path.basename(raiz)
-        for nome in os.listdir(pasta):
-            if nome.startswith(prefixo) and os.path.getsize(os.path.join(pasta, nome)) > 0:
-                return
-        raise RuntimeError("o arquivo não foi salvo")
+        ffmpeg = self._ffmpeg()
+        if not ffmpeg:
+            print(f"O áudio de '{os.path.basename(caminho)}' ficou em Opus e o Windows não toca. Instale o ffmpeg.")
+            return
+        temporario = caminho + ".aac-tmp.mp4"
+        resultado = subprocess.run(
+            [ffmpeg, "-y", "-i", caminho, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", temporario],
+            capture_output=True,
+        )
+        if resultado.returncode != 0 or not os.path.exists(temporario) or os.path.getsize(temporario) == 0:
+            if os.path.exists(temporario):
+                os.remove(temporario)
+            detalhe = (resultado.stderr or b"").decode("utf-8", "replace").strip().splitlines()
+            print(f"Não converti o áudio de '{os.path.basename(caminho)}': {detalhe[-1] if detalhe else 'ffmpeg falhou'}")
+            return
+        os.replace(temporario, caminho)
 
     def _formato_download(self):
         qualidade = self.opcoes.get("qualidade") or ""
@@ -577,11 +626,11 @@ class KiwifyWorker(QThread):
                 },
             }
         if "1080" in qualidade:
-            formato = "bv*[height<=1080]+ba/b[height<=1080]/best[height<=1080]/b"
+            formato = "bv*[height<=1080]+ba[acodec^=mp4a]/bv*[height<=1080]+ba/b[height<=1080]/b"
         elif "720" in qualidade:
-            formato = "bv*[height<=720]+ba/b[height<=720]/best[height<=720]/b"
+            formato = "bv*[height<=720]+ba[acodec^=mp4a]/bv*[height<=720]+ba/b[height<=720]/b"
         else:
-            formato = "bv*+ba/b"
+            formato = "bv*+ba[acodec^=mp4a]/bv*+ba/b"
         return {"ext": "mp4", "ydl": {"format": formato, "merge_output_format": "mp4"}}
 
     def _destino_da_aula(self, nome_curso, aula, indice_global):
