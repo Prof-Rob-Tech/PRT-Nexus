@@ -10,6 +10,7 @@ from ui.views.downloads_view import DownloadsView
 from ui.views.drive_view import DriveView
 from ui.views.favorites_view import FavoritesView
 from ui.views.history_view import HistoryView
+from ui.views.hotmart_view import HotmartView
 from ui.views.home_view import HomeView
 from ui.views.kiwify_view import KiwifyView
 from ui.views.library_view import LibraryView
@@ -25,6 +26,7 @@ __all__ = [
     "DriveView",
     "FavoritesView",
     "HistoryView",
+    "HotmartView",
     "HomeView",
     "KiwifyView",
     "LibraryView",

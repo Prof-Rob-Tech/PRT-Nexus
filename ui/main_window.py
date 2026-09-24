@@ -24,6 +24,7 @@ from ui.views.browser_view import BrowserView
 from ui.views.chip7_view import Chip7View
 from ui.views.downloads_view import DownloadsView
 from ui.views.drive_view import DriveView
+from ui.views.hotmart_view import HotmartView
 from ui.views.home_view import HomeView
 from ui.views.kiwify_view import KiwifyView
 from ui.views.mega_view import MegaView
@@ -290,6 +291,7 @@ class MainWindow(QMainWindow):
         self.chip7_view = Chip7View(downloads_view=self.downloads_view)
         self.mega_view = MegaView(downloads_view=self.downloads_view)
         self.drive_view = DriveView(downloads_view=self.downloads_view)
+        self.hotmart_view = HotmartView(downloads_view=self.downloads_view)
         self.vimeo_view = VimeoView(downloads_view=self.downloads_view)
 
         # Adiciona as Views ao StackedWidget
@@ -301,6 +303,7 @@ class MainWindow(QMainWindow):
         self.stacked_widget.addWidget(self.chip7_view)
         self.stacked_widget.addWidget(self.mega_view)
         self.stacked_widget.addWidget(self.drive_view)
+        self.stacked_widget.addWidget(self.hotmart_view)
         self.stacked_widget.addWidget(self.vimeo_view)
 
         # Layout Principal
@@ -318,6 +321,7 @@ class MainWindow(QMainWindow):
             "Chip 7": self.chip7_view,
             "Mega": self.mega_view,
             "Google Drive": self.drive_view,
+            "Hotmart": self.hotmart_view,
             "Vimeo": self.vimeo_view,
         }
 
