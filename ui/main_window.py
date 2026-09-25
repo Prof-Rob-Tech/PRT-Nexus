@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -81,7 +82,7 @@ class PRTSidebar(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setFixedWidth(205)
+        self.setFixedWidth(228)
         self.buttons: list[QPushButton] = []
         self._setup_ui()
 
@@ -94,30 +95,30 @@ class PRTSidebar(QWidget):
         header_container = QWidget()
         header_container.setStyleSheet("background: transparent; border: none;")
         header_layout = QHBoxLayout(header_container)
-        header_layout.setContentsMargins(4, 0, 4, 8)
-        header_layout.setSpacing(10)
+        header_layout.setContentsMargins(2, 0, 2, 10)
+        header_layout.setSpacing(8)
 
         logo_box = QLabel()
-        logo_box.setFixedSize(32, 32)
-        logo_box.setPixmap(svg_to_icon(SVG_ICONS["bolt"], 18).pixmap(18, 18))
+        logo_box.setFixedSize(40, 40)
+        logo_box.setPixmap(svg_to_icon(SVG_ICONS["bolt"], 24).pixmap(24, 24))
         logo_box.setAlignment(Qt.AlignmentFlag.AlignCenter)
         logo_box.setStyleSheet(
-            "background-color: #1E1E24; border: 1px solid #2D2D35; border-radius: 8px;"
+            "background-color: #1E1E24; border: 1px solid #2D2D35; border-radius: 10px;"
         )
         header_layout.addWidget(logo_box)
 
         titles_layout = QVBoxLayout()
         titles_layout.setContentsMargins(0, 0, 0, 0)
-        titles_layout.setSpacing(1)
+        titles_layout.setSpacing(2)
 
         lbl_title = QLabel("PRT Nexus")
         lbl_title.setStyleSheet(
-            "font-size: 13px; font-weight: 700; color: #F4F4F5; background: transparent; border: none;"
+            "font-size: 15px; font-weight: 700; color: #F4F4F5; background: transparent; border: none;"
         )
 
         lbl_subtitle = QLabel("ULTRA DOWNLOADER")
         lbl_subtitle.setStyleSheet(
-            "font-size: 9px; font-weight: 700; color: #3B82F6; letter-spacing: 0.8px; background: transparent; border: none;"
+            "font-size: 9px; font-weight: 700; color: #3B82F6; letter-spacing: 0.2px; background: transparent; border: none;"
         )
 
         titles_layout.addWidget(lbl_title)
@@ -137,9 +138,11 @@ class PRTSidebar(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setStyleSheet("background: transparent; border: none;")
 
         scroll_content = QWidget()
+        scroll_content.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         scroll_content.setStyleSheet("background: transparent; border: none;")
         menu_layout = QVBoxLayout(scroll_content)
         menu_layout.setContentsMargins(0, 6, 0, 0)
@@ -208,11 +211,18 @@ class PRTSidebar(QWidget):
 
         btn.setProperty("route_name", text)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         btn.clicked.connect(lambda: self._on_button_clicked(btn))
         layout.addWidget(btn)
         self.buttons.append(btn)
         self._apply_normal_style(btn)
         return btn
+
+    def selecionar_rota(self, route_name: str) -> None:
+        for btn in self.buttons:
+            if btn.property("route_name") == route_name:
+                self._set_active_button(btn)
+                return
 
     def _on_button_clicked(self, clicked_btn: QPushButton) -> None:
         self._set_active_button(clicked_btn)
@@ -289,6 +299,7 @@ class MainWindow(QMainWindow):
 
         # Instância das Views
         self.home_view = HomeView()
+        self.home_view.navigate_requested.connect(self._on_navigation_requested)
         self.browser_view = BrowserView()
         self.downloads_view = DownloadsView()
         self.kiwify_view = KiwifyView()
@@ -341,3 +352,4 @@ class MainWindow(QMainWindow):
 
         if route_name in routes:
             self.stacked_widget.setCurrentWidget(routes[route_name])
+            self.sidebar.selecionar_rota(route_name)

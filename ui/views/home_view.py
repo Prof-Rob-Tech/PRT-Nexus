@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -26,35 +27,38 @@ class StatCard(QFrame):
 
     def __init__(self, title: str, value: str, bar_color: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setMinimumHeight(118)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setStyleSheet(f"""
             QFrame {{
                 background-color: {ThemeColors.CARD};
                 border: 1px solid {ThemeColors.BORDER};
-                border-radius: 8px;
+                border-radius: 10px;
             }}
         """)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 16, 16, 16)
-        layout.setSpacing(14)
+        layout.setContentsMargins(18, 22, 22, 22)
+        layout.setSpacing(18)
 
         color_bar = QFrame()
-        color_bar.setFixedWidth(5)
+        color_bar.setFixedWidth(6)
         color_bar.setStyleSheet(f"""
             background-color: {bar_color};
-            border-radius: 2px;
+            border-radius: 3px;
             border: none;
         """)
         layout.addWidget(color_bar)
 
         text_layout = QVBoxLayout()
-        text_layout.setContentsMargins(0, 0, 0, 0)
-        text_layout.setSpacing(8)
+        text_layout.setContentsMargins(0, 4, 0, 4)
+        text_layout.setSpacing(12)
 
         lbl_title = QLabel(title.upper())
         lbl_title.setStyleSheet(f"""
-            font-size: 11px;
+            font-size: 12px;
             font-weight: bold;
+            letter-spacing: 0.6px;
             color: {ThemeColors.TEXT_SECONDARY};
             border: none;
             background: transparent;
@@ -62,7 +66,7 @@ class StatCard(QFrame):
 
         lbl_value = QLabel(value)
         lbl_value.setStyleSheet(f"""
-            font-size: 15px;
+            font-size: 22px;
             font-weight: bold;
             color: {ThemeColors.TEXT};
             border: none;
@@ -185,15 +189,15 @@ class HomeView(QWidget):
         stats_layout = QHBoxLayout()
         stats_layout.setSpacing(16)
 
-        card1 = StatCard("Conectores", "9 Módulos Prontos", "#10B981")
+        card1 = StatCard("Conectores", "10 Módulos Prontos", "#10B981")
         card2 = StatCard("Downloads Ativos", "0 em andamento", "#6366F1")
         card3 = StatCard("Mídias Salvas", "0 arquivos", "#F59E0B")
         card4 = StatCard("Sistema Core", "100% Operacional", "#06B6D4")
 
-        stats_layout.addWidget(card1)
-        stats_layout.addWidget(card2)
-        stats_layout.addWidget(card3)
-        stats_layout.addWidget(card4)
+        stats_layout.addWidget(card1, 1)
+        stats_layout.addWidget(card2, 1)
+        stats_layout.addWidget(card3, 1)
+        stats_layout.addWidget(card4, 1)
 
         container_layout.addLayout(stats_layout)
 
@@ -218,7 +222,9 @@ class HomeView(QWidget):
             ("Kiwify", "Acessar conteúdos da plataforma Kiwify", "Kiwify"),
             ("Hotmart", "Acessar áreas de membros da Hotmart", "Hotmart"),
             ("Greenn Club", "Área de membros do Greenn Club", "Greenn Club"),
+            ("Vimeo", "Baixar vídeo público ou não listado pelo link", "Vimeo"),
             ("Google Drive", "Baixar arquivos e pastas do Drive", "Google Drive"),
+            ("Mega", "Baixar arquivos públicos do Mega pelo link", "Mega"),
             ("Universo Técnico", "Extrair aulas do Universo Técnico", "Universo Técnico"),
             ("Chip 7", "Acessar cursos e extrair vídeos do Vimeo", "Chip 7"),
         ]
