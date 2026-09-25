@@ -1,24 +1,18 @@
-"""
-===========================================================
-PRT Nexus - YouTube View
-Class: YouTubeView
-Description: Interface completa do Conector do YouTube.
-===========================================================
-"""
-
 import os
-import re
-from PySide6.QtCore import QByteArray, QSize, Qt, QThread, Signal
-from PySide6.QtGui import QIcon, QPainter, QPixmap
-from PySide6.QtSvg import QSvgRenderer
+
+from PySide6.QtCore import QEvent, QTimer, Qt, QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QComboBox,
     QFileDialog,
+    QFormLayout,
     QFrame,
+    QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QLineEdit,
+    QPlainTextEdit,
+    QComboBox,
     QMessageBox,
     QProgressBar,
     QPushButton,
@@ -26,496 +20,480 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
+    QCheckBox,
 )
 
-from services.extractors.youtube_connector import YouTubeConnector
-from theme.colors import ThemeColors
-
-YOUTUBE_SVG = '<svg viewBox="0 0 24 24"><path fill="#FF0000" d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2 31.8 31.8 0 0 0 0 12c0 1.9.2 3.8.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.3-2 .5-3.9.5-5.8s-.2-3.8-.5-5.8z"/><polygon fill="#FFFFFF" points="9.6,15.6 15.8,12 9.6,8.4"/></svg>'
-
-
-def make_yt_pixmap(size: int = 32) -> QPixmap:
-    renderer = QSvgRenderer(QByteArray(YOUTUBE_SVG.encode("utf-8")))
-    pixmap = QPixmap(size, size)
-    pixmap.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pixmap)
-    renderer.render(painter)
-    painter.end()
-    return pixmap
+from services.extractors.youtube_connector import YouTubeWorker, separar_links
 
 
 class YouTubeView(QWidget):
-    """View do Conector do YouTube no estilo completo do PRT Nexus."""
+    def __init__(self, parent=None, downloads_view=None):
+        super().__init__(parent)
+        self.downloads_view = downloads_view
+        self.worker = None
+        self._montar_interface()
+        self._aplicar_estilos()
+        self._conectar_acoes()
 
-    def __init__(self) -> None:
-        super().__init__()
-        self.download_worker = None
-        self.default_dest = os.path.expanduser("~/Downloads/PRT_Nexus")
-        self.added_files = set()
-        self.is_paused = False
-        self._setup_ui()
+    def _aplicar_estilos(self):
+        self.setStyleSheet("""
+            QWidget { background-color: #1e1e1e; color: #ffffff; }
+            QGroupBox {
+                background-color: #1e1e1e;
+                border: 1px solid #333333;
+                border-radius: 8px;
+                margin-top: 4px;
+                padding-top: 22px;
+                padding-bottom: 8px;
+                font-size: 13px;
+                font-weight: bold;
+                color: #ffffff;
+            }
+            QGroupBox::title {
+                subcontrol-origin: padding;
+                subcontrol-position: top left;
+                left: 10px;
+                top: 6px;
+                padding: 0 4px;
+                background-color: transparent;
+                color: #ffffff;
+            }
+            QFrame#gb_tabela {
+                background-color: #1e1e1e;
+                border: 1px solid #3c3c3c;
+                border-radius: 12px;
+            }
+            QLineEdit, QPlainTextEdit, QComboBox {
+                background-color: #252526;
+                border: 1px solid #3a3a3a;
+                border-radius: 6px;
+                color: #ffffff;
+                padding: 6px 10px;
+                font-size: 12px;
+            }
+            QLineEdit:focus, QPlainTextEdit:focus, QComboBox:focus { border: 1px solid #FF0000; }
+            QLabel.lbl-box {
+                background-color: #252526;
+                border: 1px solid #3a3a3a;
+                border-radius: 6px;
+                color: #cccccc;
+                padding: 6px 10px;
+                font-size: 12px;
+            }
+            QCheckBox {
+                color: #cccccc;
+                font-size: 12px;
+                spacing: 8px;
+                background-color: transparent;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+                border-radius: 4px;
+                border: 1px solid #444444;
+                background-color: #252526;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #FF0000;
+                border-color: #FF0000;
+            }
+            QPushButton#btn_alterar, QPushButton#btn_pausar, QPushButton#btn_cancelar, QPushButton#btn_limpar {
+                background-color: #2b2b2b;
+                color: #ffffff;
+                border: 1px solid #3a3a3a;
+                border-radius: 6px;
+                padding: 5px 12px;
+                font-weight: bold;
+                font-size: 11px;
+            }
+            QPushButton#btn_cancelar:hover, QPushButton#btn_limpar:hover { background-color: #8b0000; }
+        """)
 
-    def _setup_ui(self) -> None:
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(20, 20, 20, 20)
-        main_layout.setSpacing(16)
+    def _montar_interface(self):
+        layout_principal = QVBoxLayout(self)
+        layout_principal.setContentsMargins(15, 15, 15, 15)
+        layout_principal.setSpacing(10)
 
-        style_card_title = "font-size: 15px; font-weight: bold; color: #FACC15;"
+        lbl_titulo = QLabel("Conector YouTube")
+        lbl_titulo.setStyleSheet("font-size: 24px; font-weight: bold; color: #ffffff;")
+        lbl_sub = QLabel("Vídeos avulsos vão para a pasta Youtube. O canal ganha uma pasta com o nome dele e as aulas entram lá.")
+        lbl_sub.setStyleSheet("font-size: 14px; color: #888888;")
+        lbl_sub.setWordWrap(True)
+        layout_principal.addWidget(lbl_titulo)
+        layout_principal.addWidget(lbl_sub)
 
-        header_title_layout = QHBoxLayout()
-        header_title_layout.setSpacing(10)
-        header_title_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        layout_top = QHBoxLayout()
+        layout_top.setSpacing(12)
+        ly_esq = QVBoxLayout()
+        ly_esq.setSpacing(10)
 
-        lbl_icon = QLabel()
-        lbl_icon.setPixmap(make_yt_pixmap(34))
+        gb_captura = QGroupBox("🔗 Links do YouTube")
+        ly_captura = QVBoxLayout(gb_captura)
+        ly_captura.setContentsMargins(10, 10, 10, 10)
+        ly_captura.setSpacing(8)
+        self.txt_url = QPlainTextEdit()
+        self.txt_url.setPlaceholderText("Um link por linha\nhttps://www.youtube.com/watch?v=...\nhttps://youtu.be/...\nhttps://www.youtube.com/playlist?list=...")
+        self.txt_url.setFixedHeight(78)
+        ly_captura.addWidget(self.txt_url)
+        self.btn_baixar = QPushButton("📥 Listar e baixar a fila")
+        self.btn_baixar.setStyleSheet(
+            "background-color: #FF0000; color: #ffffff; font-weight: bold; padding: 8px; border-radius: 8px; border: none;"
+        )
+        ly_captura.addWidget(self.btn_baixar)
+        ly_esq.addWidget(gb_captura)
 
-        lbl_header_title = QLabel("Conector Youtube")
-        lbl_header_title.setStyleSheet("font-size: 24px; font-weight: bold; color: #FACC15;")
+        gb_destino = QGroupBox("📁 Pasta de Destino")
+        ly_dest = QHBoxLayout(gb_destino)
+        ly_dest.setContentsMargins(10, 10, 10, 10)
+        self.txt_destino = QLineEdit(os.path.join(os.path.expanduser("~"), "Downloads", "PRT_Nexus"))
+        self.txt_destino.deselect()
+        self.txt_destino.installEventFilter(self)
+        self.btn_alterar_dest = QPushButton("Alterar")
+        self.btn_alterar_dest.setObjectName("btn_alterar")
+        ly_dest.addWidget(self.txt_destino)
+        ly_dest.addWidget(self.btn_alterar_dest)
+        ly_esq.addWidget(gb_destino)
 
-        header_title_layout.addWidget(lbl_icon)
-        header_title_layout.addWidget(lbl_header_title)
+        gb_canal = QGroupBox("📺 Canal")
+        ly_canal = QVBoxLayout(gb_canal)
+        ly_canal.setContentsMargins(10, 10, 10, 10)
+        ly_canal.setSpacing(8)
+        self.txt_canal = QLineEdit()
+        self.txt_canal.setPlaceholderText("https://www.youtube.com/@canal")
+        self.btn_canal = QPushButton("📥 Baixar aulas do canal")
+        self.btn_canal.setStyleSheet(
+            "background-color: #FF0000; color: #ffffff; font-weight: bold; padding: 8px; border-radius: 8px; border: none;"
+        )
+        ly_canal.addWidget(self.txt_canal)
+        ly_canal.addWidget(self.btn_canal)
+        ly_esq.addWidget(gb_canal)
+        layout_top.addLayout(ly_esq, stretch=1)
 
-        lbl_header_sub = QLabel("Capture, extraia e gerencie conteúdos diretamente do Youtube.")
-        lbl_header_sub.setStyleSheet(f"font-size: 12px; color: {ThemeColors.TEXT_SECONDARY};")
+        ly_dir = QVBoxLayout()
+        ly_dir.setSpacing(10)
+        gb_org = QGroupBox("📁 Organização")
+        form_org = QFormLayout(gb_org)
+        form_org.setContentsMargins(10, 10, 10, 10)
+        form_org.setSpacing(12)
 
-        main_layout.addLayout(header_title_layout)
-        main_layout.addWidget(lbl_header_sub)
-
-        card_capture = self._create_card()
-        layout_capture = QVBoxLayout(card_capture)
-        layout_capture.setSpacing(10)
-
-        lbl_cap_title = QLabel("🔗 Captura de Mídia - Youtube")
-        lbl_cap_title.setStyleSheet(style_card_title)
-
-        self.txt_url = QLineEdit()
-        self.txt_url.setPlaceholderText("Cole o link do vídeo, playlist ou canal aqui...")
-        self._apply_input_style(self.txt_url)
-
-        row_cap_opts = QHBoxLayout()
-        row_cap_opts.setSpacing(10)
-
-        lbl_qual = QLabel("Qualidade:")
-        lbl_qual.setStyleSheet("color: #FACC15; font-weight: bold; font-size: 13px;")
-
-        self.cmb_quality = QComboBox()
-        self.cmb_quality.addItems([
+        lbl_qual = QLabel("Qualidade")
+        lbl_qual.setProperty("class", "lbl-box")
+        self.cmb_qualidade = QComboBox()
+        self.cmb_qualidade.addItems([
             "Vídeo - Max Qualidade (MP4)",
             "Vídeo - 1080p (MP4)",
             "Vídeo - 720p (MP4)",
-            "Áudio - MP3 (Alta Qualidade)"
+            "Apenas Áudio (MP3)",
         ])
-        self._apply_combo_style(self.cmb_quality)
 
-        self.btn_download_single = QPushButton("⬇ Baixar Mídia Avulsa")
-        self.btn_download_single.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_download_single.setStyleSheet("""
-            QPushButton {
-                background-color: #2563EB;
-                color: #FFFFFF;
-                border: none;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-weight: bold;
+        lbl_pasta_videos = QLabel("Pasta dos vídeos")
+        lbl_pasta_videos.setProperty("class", "lbl-box")
+        self.txt_pasta_videos = QLineEdit()
+        self.txt_pasta_videos.setPlaceholderText("Vazio usa Youtube")
+
+        lbl_pasta_canal = QLabel("Pasta do canal")
+        lbl_pasta_canal.setProperty("class", "lbl-box")
+        self.txt_pasta_canal = QLineEdit()
+        self.txt_pasta_canal.setPlaceholderText("Vazio usa o nome do canal")
+
+        form_org.addRow(lbl_pasta_videos, self.txt_pasta_videos)
+        form_org.addRow(lbl_pasta_canal, self.txt_pasta_canal)
+        form_org.addRow(lbl_qual, self.cmb_qualidade)
+        ly_dir.addWidget(gb_org)
+
+        gb_opcoes = QGroupBox("⚙️ Opções")
+        ly_opcoes = QVBoxLayout(gb_opcoes)
+        ly_opcoes.setContentsMargins(12, 12, 12, 12)
+        self.chk_notif = QCheckBox("Notificar com som ao concluir")
+        ly_opcoes.addWidget(self.chk_notif)
+        ly_dir.addWidget(gb_opcoes)
+        layout_top.addLayout(ly_dir, stretch=1)
+        layout_principal.addLayout(layout_top)
+
+        ly_prog = QHBoxLayout()
+        self.lbl_status_global = QLabel("Aguardando link do YouTube...")
+        self.lbl_status_global.setStyleSheet(
+            "background-color: #1e1e1e; border: 1px solid #3a3a3a; border-radius: 8px; color: #aaaaaa; font-size: 11px; padding: 5px 10px;"
+        )
+        self.lbl_velocidade = QLabel("-- MiB/s | ETA: --:--")
+        self.lbl_velocidade.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_velocidade.setStyleSheet(
+            "background-color: #1e1e1e; border: 1px solid #3a3a3a; border-radius: 8px; color: #aaaaaa; font-size: 11px; padding: 5px 10px;"
+        )
+        self.pbar_global = QProgressBar()
+        self.pbar_global.setRange(0, 100)
+        self.pbar_global.setValue(0)
+        self.pbar_global.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.pbar_global.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #3a3a3a; border-radius: 8px; text-align: center;
+                background-color: #1e1e1e; color: #ffffff; font-size: 11px;
             }
-            QPushButton:hover { background-color: #1D4ED8; }
+            QProgressBar::chunk { background-color: #FF0000; border-radius: 6px; }
         """)
-        self.btn_download_single.clicked.connect(lambda: self._on_start_download(is_playlist=False))
+        self.btn_pausar = QPushButton("⏸️ Pausar")
+        self.btn_pausar.setObjectName("btn_pausar")
+        self.btn_pausar.setEnabled(False)
+        self.btn_cancelar = QPushButton("⏹️ Cancelar")
+        self.btn_cancelar.setObjectName("btn_cancelar")
+        self.btn_cancelar.setEnabled(False)
+        ly_prog.addWidget(self.lbl_status_global, stretch=2)
+        ly_prog.addWidget(self.lbl_velocidade, stretch=1)
+        ly_prog.addWidget(self.pbar_global, stretch=1)
+        ly_prog.addWidget(self.btn_pausar)
+        ly_prog.addWidget(self.btn_cancelar)
+        layout_principal.addLayout(ly_prog)
 
-        self.btn_map_playlist = QPushButton("📖 Mapear e Baixar Playlist / Canal")
-        self.btn_map_playlist.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_map_playlist.setStyleSheet("""
-            QPushButton {
-                background-color: #059669;
-                color: #FFFFFF;
-                border: none;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-weight: bold;
-            }
-            QPushButton:hover { background-color: #047857; }
-        """)
-        self.btn_map_playlist.clicked.connect(lambda: self._on_start_download(is_playlist=True))
+        gb_tabela = QFrame()
+        gb_tabela.setObjectName("gb_tabela")
+        ly_tab = QVBoxLayout(gb_tabela)
+        ly_tab.setContentsMargins(10, 8, 10, 8)
+        ly_tab.setSpacing(6)
 
-        row_cap_opts.addWidget(lbl_qual)
-        row_cap_opts.addWidget(self.cmb_quality, stretch=1)
-        row_cap_opts.addWidget(self.btn_download_single)
-        row_cap_opts.addWidget(self.btn_map_playlist)
+        ly_topo = QHBoxLayout()
+        ly_topo.setContentsMargins(0, 0, 0, 0)
+        ly_topo.setSpacing(8)
+        lbl_tab = QLabel("📦 Vídeos do YouTube (duplo clique abre a pasta)")
+        lbl_tab.setStyleSheet(
+            "font-size: 13px; font-weight: bold; color: #ffffff; background: transparent; border: none; padding: 0;"
+        )
+        lbl_tab.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        self.btn_limpar = QPushButton("🗑️ Limpar Concluídos")
+        self.btn_limpar.setObjectName("btn_limpar")
+        ly_topo.addWidget(lbl_tab, 1, Qt.AlignmentFlag.AlignVCenter)
+        ly_topo.addWidget(self.btn_limpar, 0, Qt.AlignmentFlag.AlignVCenter)
+        ly_tab.addLayout(ly_topo)
 
-        layout_capture.addWidget(lbl_cap_title)
-        layout_capture.addWidget(self.txt_url)
-        layout_capture.addLayout(row_cap_opts)
-        main_layout.addWidget(card_capture)
+        self.tabela = QTableWidget(0, 4)
+        self.tabela.verticalHeader().setVisible(False)
+        self.tabela.setHorizontalHeaderLabels(["#", "Arquivo", "Caminho Salvo", "Status"])
+        self.tabela.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
-        row_middle = QHBoxLayout()
-        row_middle.setSpacing(16)
-
-        col_left = QVBoxLayout()
-        col_left.setSpacing(16)
-
-        card_auth = self._create_card()
-        layout_auth = QVBoxLayout(card_auth)
-        lbl_auth_title = QLabel("🔑 Autenticação (Áreas Pagas / Privadas)")
-        lbl_auth_title.setStyleSheet(style_card_title)
-
-        self.txt_user = QLineEdit()
-        self.txt_user.setPlaceholderText("E-mail / Usuário")
-        self._apply_input_style(self.txt_user)
-
-        self.txt_pass = QLineEdit()
-        self.txt_pass.setPlaceholderText("Senha")
-        self.txt_pass.setEchoMode(QLineEdit.EchoMode.Password)
-        self._apply_input_style(self.txt_pass)
-
-        layout_auth.addWidget(lbl_auth_title)
-        layout_auth.addWidget(self.txt_user)
-        layout_auth.addWidget(self.txt_pass)
-
-        card_dest = self._create_card()
-        layout_dest = QVBoxLayout(card_dest)
-        lbl_dest_title = QLabel("📁 Pasta de Destino")
-        lbl_dest_title.setStyleSheet(style_card_title)
-
-        row_dest_path = QHBoxLayout()
-        self.txt_dest_path = QLineEdit(self.default_dest)
-        self._apply_input_style(self.txt_dest_path)
-
-        btn_browse = QPushButton("Alterar")
-        btn_browse.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_browse.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {ThemeColors.BACKGROUND};
-                color: {ThemeColors.TEXT};
-                border: 1px solid {ThemeColors.BORDER};
-                border-radius: 6px;
-                padding: 6px 12px;
-            }}
-        """)
-        btn_browse.clicked.connect(self._on_select_folder)
-
-        row_dest_path.addWidget(self.txt_dest_path, stretch=1)
-        row_dest_path.addWidget(btn_browse)
-
-        layout_dest.addWidget(lbl_dest_title)
-        layout_dest.addLayout(row_dest_path)
-
-        col_left.addWidget(card_auth)
-        col_left.addWidget(card_dest)
-
-        card_org = self._create_card()
-        layout_org = QVBoxLayout(card_org)
-        lbl_org_title = QLabel("🗂 Organização de Pastas (Playlist / Canal)")
-        lbl_org_title.setStyleSheet(style_card_title)
-
-        self.txt_content_name = QLineEdit()
-        self.txt_content_name.setPlaceholderText("Nome do Conteúdo / Playlist / Canal")
-        self._apply_input_style(self.txt_content_name)
-
-        row_mod = QHBoxLayout()
-        cmb_mod = QComboBox()
-        cmb_mod.addItem("Mod 1")
-        self._apply_combo_style(cmb_mod)
-        self.txt_mod_name = QLineEdit()
-        self.txt_mod_name.setPlaceholderText("Nome do Módulo / Seção")
-        self._apply_input_style(self.txt_mod_name)
-        row_mod.addWidget(cmb_mod)
-        row_mod.addWidget(self.txt_mod_name, stretch=1)
-
-        row_item = QHBoxLayout()
-        cmb_item = QComboBox()
-        cmb_item.addItem("Item 1")
-        self._apply_combo_style(cmb_item)
-        self.txt_item_name = QLineEdit()
-        self.txt_item_name.setPlaceholderText("Nome do Vídeo")
-        self._apply_input_style(self.txt_item_name)
-        row_item.addWidget(cmb_item)
-        row_item.addWidget(self.txt_item_name, stretch=1)
-
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setValue(0)
-        self.progress_bar.setFixedHeight(8)
-        self.progress_bar.setTextVisible(False)
-        self.progress_bar.setStyleSheet(f"""
-            QProgressBar {{
-                background-color: {ThemeColors.BACKGROUND};
-                border-radius: 4px;
-                border: none;
-            }}
-            QProgressBar::chunk {{
-                background-color: #3B82F6;
-                border-radius: 4px;
-            }}
-        """)
-
-        row_controls = QHBoxLayout()
-        self.lbl_status = QLabel("Aguardando link de download...")
-        self.lbl_status.setFixedHeight(24)
-        self.lbl_status.setStyleSheet(f"color: {ThemeColors.TEXT_SECONDARY}; font-size: 12px;")
-
-        self.btn_pause = QPushButton("⏸  Pausar")
-        self.btn_pause.setEnabled(False)
-        self.btn_pause.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_pause.setStyleSheet("""
-            QPushButton {
-                background-color: #D97706;
-                color: #FFFFFF;
-                border: none;
-                border-radius: 4px;
-                padding: 4px 12px;
-                min-width: 85px;
-                font-weight: bold;
-                font-size: 11px;
-            }
-            QPushButton:hover { background-color: #B45309; }
-            QPushButton:disabled { background-color: #4B5563; color: #9CA3AF; }
-        """)
-        self.btn_pause.clicked.connect(self._on_toggle_pause)
-
-        self.btn_stop = QPushButton("⏹ Parar")
-        self.btn_stop.setEnabled(False)
-        self.btn_stop.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_stop.setStyleSheet("""
-            QPushButton {
-                background-color: #DC2626;
-                color: #FFFFFF;
-                border: none;
-                border-radius: 4px;
-                padding: 4px 10px;
-                font-weight: bold;
-                font-size: 11px;
-            }
-            QPushButton:hover { background-color: #B91C1C; }
-            QPushButton:disabled { background-color: #4B5563; color: #9CA3AF; }
-        """)
-        self.btn_stop.clicked.connect(self._on_stop_download)
-
-        row_controls.addWidget(self.lbl_status, stretch=1)
-        row_controls.addWidget(self.btn_pause)
-        row_controls.addWidget(self.btn_stop)
-
-        layout_org.addWidget(lbl_org_title)
-        layout_org.addWidget(self.txt_content_name)
-        layout_org.addLayout(row_mod)
-        layout_org.addLayout(row_item)
-        layout_org.addWidget(self.progress_bar)
-        layout_org.addLayout(row_controls)
-
-        row_middle.addLayout(col_left, stretch=1)
-        row_middle.addWidget(card_org, stretch=1)
-        main_layout.addLayout(row_middle)
-
-        card_table = self._create_card()
-        layout_table = QVBoxLayout(card_table)
-
-        lbl_tbl_title = QLabel("📦 Mídias Concluídas do Youtube")
-        lbl_tbl_title.setStyleSheet(style_card_title)
-
-        self.table_downloads = QTableWidget(0, 4)
-        headers = ["#", "Título / Nome do Arquivo", "Caminho Salvo", "Status"]
-
-        for col, text in enumerate(headers):
-            item = QTableWidgetItem(text)
-            if col in (0, 3):
-                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            else:
-                item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-            self.table_downloads.setHorizontalHeaderItem(col, item)
-
-        header = self.table_downloads.horizontalHeader()
+        header = self.tabela.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        self.table_downloads.setColumnWidth(0, 60)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
+        header.setStretchLastSection(True)
 
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.tabela.setColumnWidth(0, 45)
+        self.tabela.setColumnWidth(1, 300)
+        self.tabela.setColumnWidth(2, 400)
 
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
-        self.table_downloads.setColumnWidth(3, 140)
+        self._configurar_estilo_tabela(self.tabela)
+        ly_tab.addWidget(self.tabela)
+        layout_principal.addWidget(gb_tabela)
 
-        self.table_downloads.verticalHeader().setVisible(False)
-        self.table_downloads.setStyleSheet(f"""
-            QTableWidget {{
-                background-color: transparent;
-                color: {ThemeColors.TEXT};
-                border: 1px solid {ThemeColors.BORDER};
-                gridline-color: {ThemeColors.BORDER};
-            }}
-            QHeaderView::section {{
-                background-color: {ThemeColors.BACKGROUND};
-                color: {ThemeColors.TEXT_SECONDARY};
-                padding: 6px;
+    def _configurar_estilo_tabela(self, tabela):
+        tabela.setShowGrid(True)
+        tabela.setStyleSheet("""
+            QTableWidget {
+                gridline-color: #3a3a3a;
+                background-color: #1a1a1a;
+                border: 1px solid #3a3a3a;
+                border-radius: 10px;
+            }
+            QTableWidget::item {
                 border: none;
+                padding: 4px;
+                color: #ffffff;
+            }
+            QHeaderView::section {
+                background-color: #2b2b2b;
+                color: #ffffff;
+                border-right: 1px solid #3a3a3a;
+                border-bottom: 1px solid #3a3a3a;
+                border-top: none;
+                border-left: none;
+                padding: 6px;
                 font-weight: bold;
-            }}
+            }
         """)
+        tabela.setColumnWidth(0, 45)
 
-        layout_table.addWidget(lbl_tbl_title)
-        layout_table.addWidget(self.table_downloads)
-        main_layout.addWidget(card_table, stretch=1)
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.txt_destino.deselect()
 
-    def _create_card(self) -> QFrame:
-        card = QFrame()
-        card.setStyleSheet(f"""
-            QFrame {{
-                background-color: {ThemeColors.CARD};
-                border: 1px solid {ThemeColors.BORDER};
-                border-radius: 8px;
-            }}
-        """)
-        return card
+    def eventFilter(self, obj, event):
+        if obj is self.txt_destino and event.type() == QEvent.Type.FocusIn:
+            QTimer.singleShot(0, self.txt_destino.deselect)
+        return super().eventFilter(obj, event)
 
-    def _apply_input_style(self, widget: QLineEdit) -> None:
-        widget.setStyleSheet(f"""
-            QLineEdit {{
-                background-color: {ThemeColors.BACKGROUND};
-                color: {ThemeColors.TEXT};
-                border: 1px solid {ThemeColors.BORDER};
-                border-radius: 6px;
-                padding: 6px 10px;
-                font-size: 13px;
-            }}
-        """)
+    def _conectar_acoes(self):
+        self.btn_baixar.clicked.connect(self._iniciar_download)
+        self.btn_canal.clicked.connect(self._iniciar_canal)
+        self.btn_alterar_dest.clicked.connect(self._selecionar_pasta_destino)
+        self.btn_pausar.clicked.connect(self._toggle_pausar_resumir)
+        self.btn_cancelar.clicked.connect(self._cancelar_download)
+        self.btn_limpar.clicked.connect(self._limpar_concluidos)
+        self.tabela.itemDoubleClicked.connect(self._abrir_item_tabela)
 
-    def _apply_combo_style(self, widget: QComboBox) -> None:
-        widget.setStyleSheet(f"""
-            QComboBox {{
-                background-color: {ThemeColors.BACKGROUND};
-                color: {ThemeColors.TEXT};
-                border: 1px solid {ThemeColors.BORDER};
-                border-radius: 6px;
-                padding: 6px 10px;
-            }}
-        """)
+    def _selecionar_pasta_destino(self):
+        pasta = QFileDialog.getExistingDirectory(self, "Selecionar Pasta de Destino", self.txt_destino.text())
+        if pasta:
+            self.txt_destino.setText(pasta)
 
-    def _on_select_folder(self) -> None:
-        path = QFileDialog.getExistingDirectory(self, "Selecione a pasta de destino", self.txt_dest_path.text())
-        if path:
-            self.txt_dest_path.setText(path)
-
-    def _add_file_to_table(self, filepath: str) -> None:
-        if not filepath:
+    def _abrir_item_tabela(self, item):
+        caminho_item = self.tabela.item(item.row(), 2)
+        if not caminho_item or not caminho_item.text():
             return
+        caminho = caminho_item.text()
+        if os.path.exists(caminho):
+            if os.path.isfile(caminho):
+                caminho = os.path.dirname(caminho)
+            QDesktopServices.openUrl(QUrl.fromLocalFile(caminho))
 
-        if re.search(r'\.f\d+.*?\.(mp4|m4a|webm|mkv)$', filepath):
+    def _toggle_pausar_resumir(self):
+        if not self.worker or not self.worker.isRunning():
             return
-
-        if filepath in self.added_files:
-            return
-        self.added_files.add(filepath)
-
-        row = self.table_downloads.rowCount()
-        self.table_downloads.insertRow(row)
-
-        item_id = QTableWidgetItem(str(row + 1))
-        item_id.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        item_title = QTableWidgetItem(os.path.basename(filepath))
-        item_path = QTableWidgetItem(filepath)
-
-        item_status = QTableWidgetItem("Concluído")
-        item_status.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        self.table_downloads.setItem(row, 0, item_id)
-        self.table_downloads.setItem(row, 1, item_title)
-        self.table_downloads.setItem(row, 2, item_path)
-        self.table_downloads.setItem(row, 3, item_status)
-
-    def _on_start_download(self, is_playlist: bool = False) -> None:
-        url = self.txt_url.text().strip()
-        if not url:
-            QMessageBox.warning(self, "Aviso", "Por favor, informe a URL do vídeo ou canal do YouTube.")
-            return
-
-        dest_folder = self.txt_dest_path.text().strip() or self.default_dest
-        os.makedirs(dest_folder, exist_ok=True)
-
-        idx = self.cmb_quality.currentIndex()
-        quality_mode = "max"
-        if idx == 1:
-            quality_mode = "1080p"
-        elif idx == 2:
-            quality_mode = "720p"
-        elif idx == 3:
-            quality_mode = "audio"
-
-        self.btn_download_single.setEnabled(False)
-        self.btn_map_playlist.setEnabled(False)
-        self.btn_pause.setEnabled(True)
-        self.btn_stop.setEnabled(True)
-        self.is_paused = False
-        self.btn_pause.setText("⏸ Pausar")
-        self.lbl_status.setText("Iniciando download da playlist/canal..." if is_playlist else "Iniciando download...")
-
-        self.download_worker = YouTubeConnector.download_video(
-            url=url,
-            output_path=dest_folder,
-            quality_mode=quality_mode,
-            is_playlist=is_playlist,
-            username=self.txt_user.text().strip(),
-            password=self.txt_pass.text().strip(),
-            custom_content=self.txt_content_name.text().strip(),
-            custom_mod=self.txt_mod_name.text().strip(),
-            custom_item=self.txt_item_name.text().strip()
-        )
-        self.download_worker.progress_signal.connect(self._on_progress)
-        self.download_worker.item_finished_signal.connect(self._add_file_to_table)
-        self.download_worker.finished_signal.connect(self._on_download_finished)
-        self.download_worker.error_signal.connect(self._on_download_error)
-        self.download_worker.start()
-
-    def _on_toggle_pause(self) -> None:
-        if not self.download_worker:
-            return
-
-        if self.is_paused:
-            self.download_worker.resume_download()
-            self.is_paused = False
-            self.btn_pause.setText("⏸  Pausar")
-            self.lbl_status.setText("Retomando download...")
+        if self.btn_pausar.text() == "⏸️ Pausar":
+            self.btn_pausar.setText("▶️ Retomar")
+            self.worker.pausar()
         else:
-            self.download_worker.pause_download()
-            self.is_paused = True
-            self.btn_pause.setText("▶  Retomar")
-            self.lbl_status.setText("Download pausado.")
+            self.btn_pausar.setText("⏸️ Pausar")
+            self.worker.resumir()
 
-    def _on_stop_download(self) -> None:
-        if self.download_worker:
-            self.lbl_status.setText("Cancelando download...")
-            self.download_worker.stop_download()
+    def _cancelar_download(self):
+        if self.worker and self.worker.isRunning():
+            self.worker.cancelar()
+            self.worker.terminate()
+            self.worker.wait()
+            self.lbl_status_global.setText("Download cancelado pelo usuário.")
+            self.lbl_velocidade.setText("-- MiB/s | ETA: --:--")
+            self.pbar_global.setValue(0)
+            self._remover_linhas_incompletas()
+            self.btn_baixar.setEnabled(True)
+            self.btn_canal.setEnabled(True)
+            self.btn_pausar.setEnabled(False)
+            self.btn_cancelar.setEnabled(False)
+            self.btn_pausar.setText("⏸️ Pausar")
 
-    def _reset_download_buttons(self) -> None:
-        self.btn_download_single.setEnabled(True)
-        self.btn_map_playlist.setEnabled(True)
-        self.btn_pause.setEnabled(False)
-        self.btn_stop.setEnabled(False)
-        self.btn_pause.setText("⏸  Pausar")
-        self.is_paused = False
+    def _limpar_concluidos(self):
+        em_andamento = bool(self.worker and self.worker.isRunning())
+        for row in reversed(range(self.tabela.rowCount())):
+            pbar = self.tabela.cellWidget(row, 3)
+            if not isinstance(pbar, QProgressBar):
+                continue
+            if pbar.value() >= 100 or not em_andamento:
+                self.tabela.removeRow(row)
 
-    def _on_progress(self, data: dict) -> None:
-        if self.is_paused:
+    def _remover_linhas_incompletas(self):
+        for row in reversed(range(self.tabela.rowCount())):
+            pbar = self.tabela.cellWidget(row, 3)
+            if isinstance(pbar, QProgressBar) and pbar.value() < 100:
+                self.tabela.removeRow(row)
+
+    def _iniciar_canal(self):
+        link = (self.txt_canal.text() or "").strip()
+        if not link:
+            QMessageBox.warning(self, "Canal vazio", "Cole o link do canal, como youtube.com/@canal.")
             return
-        percent = int(data.get("percent", 0))
-        self.progress_bar.setValue(percent)
-        filename = data.get("filename", "")
-        
-        # Corta nomes de arquivos muito longos para evitar reajuste de layout
-        if len(filename) > 32:
-            filename = filename[:29] + "..."
-            
-        self.lbl_status.setText(
-            f"Baixando: {filename} ({percent}%) | Vel: {data.get('speed')}"
-        )
+        self._comecar([link], canal=True)
 
-    def _on_download_finished(self, msg: str, filepath: str) -> None:
-        self._reset_download_buttons()
-        self.progress_bar.setValue(100)
-        self.lbl_status.setText("Processo de download concluído!")
-        if filepath:
-            self._add_file_to_table(filepath)
+    def _iniciar_download(self):
+        links = separar_links(self.txt_url.toPlainText())
+        if not links:
+            QMessageBox.warning(self, "Link vazio", "Cole um ou mais links do YouTube, um por linha.")
+            return
+        self._comecar(links, canal=False)
 
-    def _on_download_error(self, err: str) -> None:
-        self._reset_download_buttons()
-        if "interrompido pelo usuário" in err.lower():
-            self.lbl_status.setText("Download cancelado pelo usuário.")
+    def _comecar(self, links, canal):
+        destino = self.txt_destino.text().strip()
+        self.txt_destino.deselect()
+        self.tabela.setRowCount(0)
+        self._configurar_estilo_tabela(self.tabela)
+        self.btn_baixar.setEnabled(False)
+        self.btn_canal.setEnabled(False)
+        self.btn_pausar.setEnabled(True)
+        self.btn_cancelar.setEnabled(True)
+        self.btn_pausar.setText("⏸️ Pausar")
+        self.lbl_velocidade.setText("-- MiB/s | ETA: --:--")
+        opcoes = {
+            "qualidade": self.cmb_qualidade.currentText(),
+            "canal": canal,
+            "pasta_videos": self.txt_pasta_videos.text().strip(),
+            "pasta_canal": self.txt_pasta_canal.text().strip(),
+        }
+        self.worker = YouTubeWorker("", destino, opcoes=opcoes, urls=links)
+        self.worker.progresso.connect(self._on_progresso)
+        self.worker.velocidade.connect(self.lbl_velocidade.setText)
+        self.worker.item_progresso.connect(self._on_item_progresso)
+        self.worker.item_concluido.connect(self._on_item_concluido)
+        self.worker.concluido.connect(self._on_concluido)
+        self.worker.start()
+
+    def _on_progresso(self, msg, pct):
+        self.pbar_global.setValue(pct)
+        self.lbl_status_global.setText(msg)
+
+    def _criar_barra_status(self):
+        pbar = QProgressBar()
+        pbar.setRange(0, 100)
+        pbar.setValue(0)
+        pbar.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        pbar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #3a3a3a; border-radius: 6px; text-align: center;
+                background-color: #1e1e1e; color: #ffffff; font-size: 11px; font-weight: bold;
+            }
+            QProgressBar::chunk { background-color: #2ecc71; border-radius: 4px; }
+        """)
+        return pbar
+
+    def _on_item_progresso(self, num_str, pct):
+        for row in range(self.tabela.rowCount()):
+            item_num = self.tabela.item(row, 0)
+            if item_num and item_num.text() == str(num_str):
+                pbar = self.tabela.cellWidget(row, 3)
+                if isinstance(pbar, QProgressBar):
+                    pbar.setValue(int(pct))
+                break
+
+    def _on_item_concluido(self, item):
+        num = str(item.get("num", ""))
+        titulo = str(item.get("titulo", ""))
+        caminho = str(item.get("caminho", ""))
+        status = str(item.get("status", ""))
+        linha = -1
+        for row in range(self.tabela.rowCount()):
+            item_num = self.tabela.item(row, 0)
+            if item_num and item_num.text() == num:
+                linha = row
+                break
+        if linha >= 0:
+            pbar = self.tabela.cellWidget(linha, 3)
+            if isinstance(pbar, QProgressBar) and status == "Concluído":
+                pbar.setValue(100)
+                pbar.setFormat("Concluído (100%)")
+            elif isinstance(pbar, QProgressBar) and status == "Erro":
+                pbar.setValue(100)
+                pbar.setFormat("Erro")
+            return
+        row = self.tabela.rowCount()
+        self.tabela.insertRow(row)
+        item_num = QTableWidgetItem(num)
+        item_num.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.tabela.setItem(row, 0, item_num)
+        self.tabela.setItem(row, 1, QTableWidgetItem(titulo))
+        self.tabela.setItem(row, 2, QTableWidgetItem(caminho))
+        pbar = self._criar_barra_status()
+        if status == "Concluído":
+            pbar.setValue(100)
+            pbar.setFormat("Concluído (100%)")
         else:
-            self.lbl_status.setText(f"Erro no download: {err}")
-            QMessageBox.critical(self, "Erro", f"Falha no download:\n{err}")
+            pbar.setFormat("%p%")
+        self.tabela.setCellWidget(row, 3, pbar)
+
+    def _on_concluido(self, sucesso, mensagem):
+        self.btn_baixar.setEnabled(True)
+        self.btn_canal.setEnabled(True)
+        self.btn_pausar.setEnabled(False)
+        self.btn_cancelar.setEnabled(False)
+        if self.chk_notif.isChecked():
+            from PySide6.QtWidgets import QApplication
+            QApplication.beep()
+        if sucesso:
+            QMessageBox.information(self, "YouTube", mensagem)
+        else:
+            QMessageBox.critical(self, "YouTube", mensagem)

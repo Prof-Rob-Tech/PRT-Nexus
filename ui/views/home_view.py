@@ -213,7 +213,7 @@ class HomeView(QWidget):
         items = [
             ("Navegador Web", "Navegar e extrair URLs direto de sites", "Navegador"),
             ("Downloads", "Ver gerenciador e histórico de downloads", "Downloads"),
-            ("YouTube", "Download de vídeos, playlists e áudio", "YouTube"),
+            ("YouTube", "Baixar vídeo, playlist e canal públicos, sem login", "YouTube"),
             ("TikTok", "Baixar vídeo público e perfil público, sem login", "TikTok"),
             ("Kiwify", "Acessar conteúdos da plataforma Kiwify", "Kiwify"),
             ("Hotmart", "Acessar áreas de membros da Hotmart", "Hotmart"),

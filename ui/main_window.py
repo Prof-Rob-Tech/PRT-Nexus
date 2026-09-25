@@ -29,6 +29,7 @@ from ui.views.home_view import HomeView
 from ui.views.kiwify_view import KiwifyView
 from ui.views.mega_view import MegaView
 from ui.views.tiktok_view import TikTokView
+from ui.views.youtube_view import YouTubeView
 from ui.views.universo_view import UniversoView
 from ui.views.vimeo_view import VimeoView
 
@@ -293,6 +294,7 @@ class MainWindow(QMainWindow):
         self.mega_view = MegaView(downloads_view=self.downloads_view)
         self.drive_view = DriveView(downloads_view=self.downloads_view)
         self.hotmart_view = HotmartView(downloads_view=self.downloads_view)
+        self.youtube_view = YouTubeView(downloads_view=self.downloads_view)
         self.tiktok_view = TikTokView(downloads_view=self.downloads_view)
         self.vimeo_view = VimeoView(downloads_view=self.downloads_view)
 
@@ -306,6 +308,7 @@ class MainWindow(QMainWindow):
         self.stacked_widget.addWidget(self.mega_view)
         self.stacked_widget.addWidget(self.drive_view)
         self.stacked_widget.addWidget(self.hotmart_view)
+        self.stacked_widget.addWidget(self.youtube_view)
         self.stacked_widget.addWidget(self.tiktok_view)
         self.stacked_widget.addWidget(self.vimeo_view)
 
@@ -325,6 +328,7 @@ class MainWindow(QMainWindow):
             "Mega": self.mega_view,
             "Google Drive": self.drive_view,
             "Hotmart": self.hotmart_view,
+            "YouTube": self.youtube_view,
             "TikTok": self.tiktok_view,
             "Vimeo": self.vimeo_view,
         }
