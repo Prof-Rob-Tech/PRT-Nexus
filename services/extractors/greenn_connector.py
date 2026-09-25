@@ -35,6 +35,14 @@ def normalizar(texto):
     return re.sub(r"\s+", " ", base).strip().lower()
 
 
+def nome_da_pasta(texto):
+    limpo = limpar_nome(texto)
+    chave = re.sub(r"[^a-z0-9]+", "", normalizar(limpo))
+    if chave in ("tecnoproacademy", "tecnoproacadamy"):
+        return "Tecno Pró Academy"
+    return limpo
+
+
 def texto_sem_html(html):
     sem_tags = re.sub(r"<[^>]+>", " ", html or "")
     return re.sub(r"\s+", " ", sem_tags).strip()
@@ -57,6 +65,8 @@ class GreennWorker(QThread):
         self.opcoes = opcoes or {}
         self._token = ""
         self._course_id = ""
+        self._marca = ""
+        self._num_curso = 0
         self._pagina = None
         self._rota_vimeo = False
         self._sessao = requests.Session()
@@ -99,7 +109,7 @@ class GreennWorker(QThread):
             self.progresso.emit("Lendo os módulos do curso...", 18)
             nome_api, aulas = self._menu()
             digitado = (self.opcoes.get("nome_conteudo") or "").strip()
-            nome_curso = limpar_nome(digitado) if digitado else (nome_api or "Greenn Club")
+            nome_curso = limpar_nome(digitado or nome_api or "Greenn Club")
             if not aulas:
                 self.concluido.emit(False, "Entrei na conta, mas o menu do curso veio vazio.")
                 return
@@ -164,6 +174,8 @@ class GreennWorker(QThread):
             )
         self._token = unquote(token).strip()
         self._bloquear_login_vimeo(pagina)
+        self._guardar_marca(pagina)
+        self._guardar_ordem(pagina)
         self._ir_para_o_curso(pagina)
 
     def _preencher_login(self, pagina):
@@ -429,6 +441,94 @@ class GreennWorker(QThread):
                     "num_aula": indice_aula,
                 })
         return nome, aulas
+
+    def _guardar_marca(self, pagina):
+        nome = self._extrair_marca(pagina)
+        if not nome:
+            try:
+                pagina.goto(self._origem() + "/home", wait_until="domcontentloaded", timeout=45000)
+                pagina.wait_for_timeout(1800)
+                nome = self._extrair_marca(pagina)
+            except Exception:
+                nome = ""
+        self._marca = nome_da_pasta(nome) if nome else ""
+
+    def _guardar_ordem(self, pagina):
+        self._num_curso = 0
+        course_id = self._id_do_curso()
+        if not course_id:
+            return
+        if "/home" not in (pagina.url or ""):
+            try:
+                pagina.goto(self._origem() + "/home", wait_until="domcontentloaded", timeout=45000)
+            except Exception:
+                self._num_curso = 1
+                return
+        pagina.wait_for_timeout(800)
+        ids = self._ids_da_home(pagina)
+        if course_id in ids:
+            self._num_curso = ids.index(course_id) + 1
+        else:
+            self._num_curso = 1
+
+    def _ids_da_home(self, pagina):
+        for _ in range(12):
+            ids = self._ler_ids_da_home(pagina)
+            if len(ids) >= 1:
+                return ids
+            pagina.wait_for_timeout(500)
+        return []
+
+    def _ler_ids_da_home(self, pagina):
+        try:
+            ids = pagina.evaluate(
+                """() => {
+                    const links = [...document.querySelectorAll('a[href*="/curso/"]')];
+                    const grupos = new Map();
+                    for (const a of links) {
+                        const href = a.getAttribute('href') || '';
+                        const match = href.match(/\\/curso\\/(\\d+)/);
+                        if (!match) continue;
+                        let pai = a.parentElement;
+                        for (let nivel = 0; nivel < 5 && pai; nivel++) {
+                            if (!grupos.has(pai)) grupos.set(pai, []);
+                            const lista = grupos.get(pai);
+                            if (!lista.includes(match[1])) lista.push(match[1]);
+                            pai = pai.parentElement;
+                        }
+                    }
+                    let melhor = [];
+                    for (const lista of grupos.values()) {
+                        if (lista.length > melhor.length) melhor = lista;
+                    }
+                    return melhor;
+                }"""
+            ) or []
+        except Exception:
+            return []
+        return [str(item) for item in ids]
+
+    def _extrair_marca(self, pagina):
+        try:
+            texto = pagina.evaluate(
+                """() => {
+                    const header = document.querySelector('header');
+                    const pedacos = [
+                        header ? header.innerText : '',
+                        document.body ? document.body.innerText : '',
+                        document.title || ''
+                    ];
+                    return pedacos.join('\\n');
+                }"""
+            ) or ""
+        except Exception:
+            return ""
+        if re.search(r"tecnopro\s*academy", normalizar(texto)):
+            return "TECNOPRO ACADEMY"
+        match = re.search(r"#\d+\s*-\s*([^\n\r]+)", texto)
+        if match:
+            return match.group(1).strip()
+        return ""
 
     def _modulos_de(self, dados):
         if not isinstance(dados, dict):
@@ -986,7 +1086,13 @@ class GreennWorker(QThread):
         midias = self.opcoes.get("midias") or ""
         por_modulo = "Mesma Pasta" not in estrutura
         sequencial = "Original" not in midias
-        pasta = os.path.join(self.destino, f"01 - {nome_curso}")
+        pasta = self.destino
+        if self._marca and normalizar(self._marca) != normalizar(nome_curso):
+            pasta = os.path.join(pasta, self._marca)
+        nome_pasta = nome_curso
+        if self._num_curso:
+            nome_pasta = f"{self._num_curso:02d} - {nome_curso}"
+        pasta = os.path.join(pasta, nome_pasta)
         mesmo_nome = normalizar(aula.get("titulo_mod")) == normalizar(nome_curso)
         if por_modulo and not mesmo_nome:
             pasta = os.path.join(pasta, f"{aula['num_mod']:02d} - {aula['titulo_mod']}")

@@ -343,14 +343,16 @@ class GreennView(QWidget):
         self.tabela = QTableWidget(0, 4)
         self.tabela.verticalHeader().setVisible(False)
         self.tabela.setHorizontalHeaderLabels(["#", "Aula", "Caminho Salvo", "Status"])
+        self.tabela.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         header = self.tabela.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
+        header.setStretchLastSection(True)
         self.tabela.setColumnWidth(0, 45)
-        self.tabela.setColumnWidth(1, 280)
-        self.tabela.setColumnWidth(3, 140)
+        self.tabela.setColumnWidth(1, 300)
+        self.tabela.setColumnWidth(2, 400)
         self.tabela.setStyleSheet(f"""
             QTableWidget {{
                 gridline-color: #2c3d34;
