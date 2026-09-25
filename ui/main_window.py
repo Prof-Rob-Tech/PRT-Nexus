@@ -24,6 +24,7 @@ from ui.views.browser_view import BrowserView
 from ui.views.chip7_view import Chip7View
 from ui.views.downloads_view import DownloadsView
 from ui.views.drive_view import DriveView
+from ui.views.greenn_view import GreennView
 from ui.views.hotmart_view import HotmartView
 from ui.views.home_view import HomeView
 from ui.views.kiwify_view import KiwifyView
@@ -60,6 +61,7 @@ SVG_ICONS = {
     "kiwify": '<svg viewBox="0 0 24 24" fill="none"><path d="M 18.5 16 A 8.5 8.5 0 1 1 8.5 3.5" stroke="#00A859" stroke-width="3.2" stroke-linecap="round"/><ellipse cx="8.5" cy="8.5" rx="1" ry="1.8" transform="rotate(-40 8.5 8.5)" fill="#00A859"/><ellipse cx="7.2" cy="12" rx="1" ry="1.8" transform="rotate(-10 7.2 12)" fill="#00A859"/><ellipse cx="8.5" cy="15.5" rx="1" ry="1.8" transform="rotate(25 8.5 15.5)" fill="#00A859"/><ellipse cx="12" cy="17.2" rx="1" ry="1.8" transform="rotate(60 12 17.2)" fill="#00A859"/></svg>',
     "hotmart": '<svg viewBox="0 0 24 24" fill="#FF3E00"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 0.5C10.2 3.2 8.8 5 6.5 6.2C7.2 4.4 7 3 6.8 1.8C3.8 4.2 2 7.8 2 12C2 17.5 6.5 22 12 22C17.5 22 22 17.5 22 12C22 7.8 20.2 4.2 17.2 1.8C17 3 16.8 4.4 17.5 6.2C15.2 5 13.8 3.2 12 0.5ZM12 17.2A4.2 4.2 0 1 0 12 8.8A4.2 4.2 0 1 0 12 17.2Z"/></svg>',
     "vimeo": '<svg viewBox="0 0 24 24" fill="#1AB7EA"><path d="M22.396 7.164c-.093 2.026-1.507 4.8-4.239 8.321-2.822 3.682-5.202 5.523-7.143 5.523-1.203 0-2.217-1.112-3.042-3.336L5.334 10.97C4.69 8.71 4.025 7.58 3.338 7.58c-.14 0-.635.298-1.487.895L0 7.218c1.314-1.155 2.607-2.308 3.882-3.46 1.742-.152 2.996.993 3.764 3.435.82 2.604 1.393 4.223 1.718 4.855.727 1.115 1.39 1.672 1.99 1.672.6 0 1.29-.418 2.072-1.254.782-.836 1.233-1.82 1.353-2.952.23-1.98-.992-2.935-3.666-2.865 1.11-3.63 3.238-5.367 6.386-5.212 2.33.115 3.754 1.38 3.947 3.737z"/></svg>',
+    "greenn": '<svg viewBox="0 0 64 76" fill="none"><defs><linearGradient id="greennMenu" x1="8" y1="4" x2="56" y2="70" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#D4F562"/><stop offset="0.5" stop-color="#2FDB8A"/><stop offset="1" stop-color="#14C6DE"/></linearGradient></defs><circle cx="32" cy="30" r="19" stroke="url(#greennMenu)" stroke-width="9"/><path fill="url(#greennMenu)" d="M25 47h14l-7 16z"/><path d="M21 31l8 8 15-16" stroke="url(#greennMenu)" stroke-width="5.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     "drive": '<svg viewBox="0 0 24 24"><path fill="#1A73E8" d="M8.7 3.5L2.1 15h6.6l6.6-11.5H8.7z"/><path fill="#FFC107" d="M15.3 3.5H8.7l6.6 11.5h6.6L15.3 3.5z"/><path fill="#0F9D58" d="M2.1 15l3.3 5.7h13.2l-3.3-5.7H2.1z"/></svg>',
     "mega": '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#D9272E"/><path d="M7 15V9l5 4 5-4v6" stroke="#FFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>',
     "universo": '<svg viewBox="0 0 24 24" fill="none" stroke="#00D2FF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10z"/></svg>',
@@ -157,6 +159,7 @@ class PRTSidebar(QWidget):
         self._add_nav_btn(menu_layout, "TikTok", "tiktok")
         self._add_nav_btn(menu_layout, "Kiwify", "kiwify")
         self._add_nav_btn(menu_layout, "Hotmart", "hotmart")
+        self._add_nav_btn(menu_layout, "Greenn Club", "greenn")
         self._add_nav_btn(menu_layout, "Vimeo", "vimeo")
         self._add_nav_btn(menu_layout, "Google Drive", "drive")
         self._add_nav_btn(menu_layout, "Mega", "mega")
@@ -294,6 +297,7 @@ class MainWindow(QMainWindow):
         self.mega_view = MegaView(downloads_view=self.downloads_view)
         self.drive_view = DriveView(downloads_view=self.downloads_view)
         self.hotmart_view = HotmartView(downloads_view=self.downloads_view)
+        self.greenn_view = GreennView(downloads_view=self.downloads_view)
         self.youtube_view = YouTubeView(downloads_view=self.downloads_view)
         self.tiktok_view = TikTokView(downloads_view=self.downloads_view)
         self.vimeo_view = VimeoView(downloads_view=self.downloads_view)
@@ -308,6 +312,7 @@ class MainWindow(QMainWindow):
         self.stacked_widget.addWidget(self.mega_view)
         self.stacked_widget.addWidget(self.drive_view)
         self.stacked_widget.addWidget(self.hotmart_view)
+        self.stacked_widget.addWidget(self.greenn_view)
         self.stacked_widget.addWidget(self.youtube_view)
         self.stacked_widget.addWidget(self.tiktok_view)
         self.stacked_widget.addWidget(self.vimeo_view)
@@ -328,6 +333,7 @@ class MainWindow(QMainWindow):
             "Mega": self.mega_view,
             "Google Drive": self.drive_view,
             "Hotmart": self.hotmart_view,
+            "Greenn Club": self.greenn_view,
             "YouTube": self.youtube_view,
             "TikTok": self.tiktok_view,
             "Vimeo": self.vimeo_view,

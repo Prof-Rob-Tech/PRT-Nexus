@@ -105,6 +105,7 @@ class PRTSidebar(QWidget):
         self._add_nav_btn(menu_layout, "TikTok", "tiktok", "🎵")
         self._add_nav_btn(menu_layout, "Kiwify", "kiwify", "💚")
         self._add_nav_btn(menu_layout, "Hotmart", "hotmart", "🔥")
+        self._add_nav_btn(menu_layout, "Greenn Club", "greenn", "✓")
         self._add_nav_btn(menu_layout, "Vimeo", "vimeo", "🔷")
         self._add_nav_btn(menu_layout, "Google Drive", "", "📁")
         self._add_nav_btn(menu_layout, "Mega", "", "☁")

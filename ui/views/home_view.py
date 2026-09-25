@@ -217,6 +217,7 @@ class HomeView(QWidget):
             ("TikTok", "Baixar vídeo público e perfil público, sem login", "TikTok"),
             ("Kiwify", "Acessar conteúdos da plataforma Kiwify", "Kiwify"),
             ("Hotmart", "Acessar áreas de membros da Hotmart", "Hotmart"),
+            ("Greenn Club", "Área de membros do Greenn Club", "Greenn Club"),
             ("Google Drive", "Baixar arquivos e pastas do Drive", "Google Drive"),
             ("Universo Técnico", "Extrair aulas do Universo Técnico", "Universo Técnico"),
             ("Chip 7", "Acessar cursos e extrair vídeos do Vimeo", "Chip 7"),
