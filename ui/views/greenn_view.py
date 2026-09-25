@@ -1,7 +1,8 @@
 import os
+import re
 
-from PySide6.QtCore import QByteArray, Qt
-from PySide6.QtGui import QPainter, QPixmap
+from PySide6.QtCore import QByteArray, Qt, QUrl
+from PySide6.QtGui import QDesktopServices, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -15,13 +16,15 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
-    QPlainTextEdit,
     QProgressBar,
     QPushButton,
     QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
+
+from services.extractors.greenn_connector import GreennWorker
 
 VERDE = "#3DDC84"
 
@@ -55,8 +58,10 @@ class GreennView(QWidget):
     def __init__(self, parent=None, downloads_view=None):
         super().__init__(parent)
         self.downloads_view = downloads_view
+        self.worker = None
         self._montar_interface()
         self._aplicar_estilos()
+        self._conectar_acoes()
 
     def _aplicar_estilos(self):
         self.setStyleSheet(f"""
@@ -163,7 +168,7 @@ class GreennView(QWidget):
         cabecalho.addStretch()
         miolo.addLayout(cabecalho)
 
-        lbl_sub = QLabel("Área de membros do Greenn Club. Esta tela é o visual. A extração entra na próxima etapa.")
+        lbl_sub = QLabel("Entre na área de membros, cole o link do curso e baixe os módulos e as aulas.")
         lbl_sub.setStyleSheet("font-size: 14px; color: #8ea399;")
         lbl_sub.setWordWrap(True)
         miolo.addWidget(lbl_sub)
@@ -177,17 +182,49 @@ class GreennView(QWidget):
         ly_captura = QVBoxLayout(gb_captura)
         ly_captura.setContentsMargins(10, 10, 10, 10)
         ly_captura.setSpacing(8)
-        self.txt_url = QPlainTextEdit()
-        self.txt_url.setPlaceholderText("Cole o link da área de membros\nhttps://greenn.club/...")
-        self.txt_url.setFixedHeight(72)
-        self.btn_baixar = QPushButton("📥 Listar aulas")
-        self.btn_baixar.setStyleSheet(
+        self.txt_url = QLineEdit()
+        self.txt_url.setPlaceholderText("https://seucurso.greenn.club/curso/...")
+        ly_captura.addWidget(self.txt_url)
+
+        ly_aula = QHBoxLayout()
+        lbl_aula = QLabel("Aula:")
+        lbl_aula.setProperty("class", "lbl-box")
+        self.txt_aula = QLineEdit()
+        self.txt_aula.setPlaceholderText("Nome no menu, para baixar só uma aula")
+        ly_aula.addWidget(lbl_aula)
+        ly_aula.addWidget(self.txt_aula, stretch=1)
+        ly_captura.addLayout(ly_aula)
+
+        ly_btns = QHBoxLayout()
+        self.btn_avulso = QPushButton("⚡ Baixar Mídia Avulsa")
+        self.btn_avulso.setStyleSheet(
+            "background-color: #0066cc; color: white; font-weight: bold; padding: 8px; border-radius: 8px; border: none;"
+        )
+        self.btn_curso = QPushButton("🗺️ Mapear e Baixar Curso")
+        self.btn_curso.setStyleSheet(
             f"background-color: {VERDE}; color: #062016; font-weight: bold; padding: 8px; border-radius: 8px; border: none;"
         )
-        self.btn_baixar.clicked.connect(self._avisar_frontend)
-        ly_captura.addWidget(self.txt_url)
-        ly_captura.addWidget(self.btn_baixar)
+        ly_btns.addWidget(self.btn_avulso)
+        ly_btns.addWidget(self.btn_curso)
+        ly_captura.addLayout(ly_btns)
         ly_esq.addWidget(gb_captura)
+
+        gb_auth = QGroupBox("🔐 Autenticação")
+        form_auth = QFormLayout(gb_auth)
+        form_auth.setContentsMargins(10, 10, 10, 10)
+        form_auth.setSpacing(8)
+        self.txt_email = QLineEdit()
+        self.txt_email.setPlaceholderText("digite seu e-mail da Greenn")
+        self.txt_senha = QLineEdit()
+        self.txt_senha.setEchoMode(QLineEdit.EchoMode.Password)
+        self.txt_senha.setPlaceholderText("digite sua senha")
+        lbl_email = QLabel("E-mail")
+        lbl_email.setProperty("class", "lbl-box")
+        lbl_senha = QLabel("Senha")
+        lbl_senha.setProperty("class", "lbl-box")
+        form_auth.addRow(lbl_email, self.txt_email)
+        form_auth.addRow(lbl_senha, self.txt_senha)
+        ly_esq.addWidget(gb_auth)
 
         gb_destino = QGroupBox("📁 Pasta de Destino")
         ly_dest = QHBoxLayout(gb_destino)
@@ -195,7 +232,6 @@ class GreennView(QWidget):
         self.txt_destino = QLineEdit(os.path.join(os.path.expanduser("~"), "Downloads", "PRT_Nexus"))
         self.btn_alterar_dest = QPushButton("Alterar")
         self.btn_alterar_dest.setObjectName("btn_alterar")
-        self.btn_alterar_dest.clicked.connect(self._selecionar_pasta)
         ly_dest.addWidget(self.txt_destino)
         ly_dest.addWidget(self.btn_alterar_dest)
         ly_esq.addWidget(gb_destino)
@@ -211,7 +247,23 @@ class GreennView(QWidget):
         lbl_pasta = QLabel("Pasta do curso")
         lbl_pasta.setProperty("class", "lbl-box")
         self.txt_pasta = QLineEdit()
-        self.txt_pasta.setPlaceholderText("Vazio usa o nome do curso")
+        self.txt_pasta.setPlaceholderText("Vazio usa o nome do curso na Greenn")
+
+        lbl_est = QLabel("Estrutura")
+        lbl_est.setProperty("class", "lbl-box")
+        self.cmb_estrutura = QComboBox()
+        self.cmb_estrutura.addItems([
+            "Organizado Automaticamente por Módulo",
+            "Todos os Vídeos na Mesma Pasta",
+        ])
+
+        lbl_mid = QLabel("Mídias")
+        lbl_mid.setProperty("class", "lbl-box")
+        self.cmb_midias = QComboBox()
+        self.cmb_midias.addItems([
+            "Extração Sequencial de Vídeos (01 -, 02 -)",
+            "Manter Nome Original do Vídeo",
+        ])
 
         lbl_qual = QLabel("Qualidade")
         lbl_qual.setProperty("class", "lbl-box")
@@ -223,13 +275,20 @@ class GreennView(QWidget):
             "Apenas Áudio (MP3)",
         ])
         form_org.addRow(lbl_pasta, self.txt_pasta)
+        form_org.addRow(lbl_est, self.cmb_estrutura)
+        form_org.addRow(lbl_mid, self.cmb_midias)
         form_org.addRow(lbl_qual, self.cmb_qualidade)
         ly_dir.addWidget(gb_org)
 
         gb_opcoes = QGroupBox("⚙️ Opções")
         ly_opcoes = QVBoxLayout(gb_opcoes)
         ly_opcoes.setContentsMargins(12, 12, 12, 12)
+        self.chk_anexos = QCheckBox("Baixar materiais anexos das aulas (PDFs, ZIPs)")
+        self.chk_anexos.setChecked(True)
+        self.chk_txt = QCheckBox("Gerar arquivo .txt com índice e descrição das aulas")
         self.chk_notif = QCheckBox("Notificar com som ao concluir")
+        ly_opcoes.addWidget(self.chk_anexos)
+        ly_opcoes.addWidget(self.chk_txt)
         ly_opcoes.addWidget(self.chk_notif)
         ly_dir.addWidget(gb_opcoes)
         layout_top.addLayout(ly_dir, stretch=1)
@@ -273,8 +332,14 @@ class GreennView(QWidget):
         gb_tabela.setObjectName("gb_tabela")
         ly_tab = QVBoxLayout(gb_tabela)
         ly_tab.setContentsMargins(10, 8, 10, 8)
+        cab_tab = QHBoxLayout()
         lbl_tab = QLabel("📦 Aulas do Greenn Club")
         lbl_tab.setStyleSheet("font-size: 13px; font-weight: bold; color: #ffffff; background: transparent; border: none;")
+        self.btn_limpar = QPushButton("Limpar concluídos")
+        self.btn_limpar.setObjectName("btn_limpar")
+        cab_tab.addWidget(lbl_tab)
+        cab_tab.addStretch()
+        cab_tab.addWidget(self.btn_limpar)
         self.tabela = QTableWidget(0, 4)
         self.tabela.verticalHeader().setVisible(False)
         self.tabela.setHorizontalHeaderLabels(["#", "Aula", "Caminho Salvo", "Status"])
@@ -299,22 +364,193 @@ class GreennView(QWidget):
                 color: #ffffff;
                 border-right: 1px solid #2c3d34;
                 border-bottom: 1px solid #2c3d34;
+                border-top: none;
+                border-left: none;
                 padding: 6px;
                 font-weight: bold;
             }}
         """)
-        ly_tab.addWidget(lbl_tab)
+        ly_tab.addLayout(cab_tab)
         ly_tab.addWidget(self.tabela)
         miolo.addWidget(gb_tabela)
+
+    def _conectar_acoes(self):
+        self.btn_avulso.clicked.connect(lambda: self._iniciar_download(modo_avulso=True))
+        self.btn_curso.clicked.connect(lambda: self._iniciar_download(modo_avulso=False))
+        self.btn_alterar_dest.clicked.connect(self._selecionar_pasta)
+        self.btn_pausar.clicked.connect(self._toggle_pausar_resumir)
+        self.btn_cancelar.clicked.connect(self._cancelar_download)
+        self.btn_limpar.clicked.connect(self._limpar_concluidos)
+        self.tabela.itemDoubleClicked.connect(self._abrir_item_tabela)
 
     def _selecionar_pasta(self):
         pasta = QFileDialog.getExistingDirectory(self, "Selecionar Pasta de Destino", self.txt_destino.text())
         if pasta:
             self.txt_destino.setText(pasta)
 
-    def _avisar_frontend(self):
-        QMessageBox.information(
-            self,
-            "Greenn Club",
-            "A tela está pronta. A extração das aulas entra na próxima etapa.",
-        )
+    def _abrir_item_tabela(self, item):
+        caminho_item = self.tabela.item(item.row(), 2)
+        if not caminho_item or not caminho_item.text():
+            return
+        caminho = caminho_item.text()
+        if os.path.exists(caminho):
+            if os.path.isfile(caminho):
+                caminho = os.path.dirname(caminho)
+            QDesktopServices.openUrl(QUrl.fromLocalFile(caminho))
+
+    def _toggle_pausar_resumir(self):
+        if not self.worker or not self.worker.isRunning():
+            return
+        if self.btn_pausar.text() == "⏸️ Pausar":
+            self.btn_pausar.setText("▶️ Retomar")
+            self.worker.pausar()
+        else:
+            self.btn_pausar.setText("⏸️ Pausar")
+            self.worker.resumir()
+
+    def _cancelar_download(self):
+        if self.worker and self.worker.isRunning():
+            self.worker.cancelar()
+            self.worker.terminate()
+            self.worker.wait()
+            self.lbl_status_global.setText("Download cancelado pelo usuário.")
+            self.lbl_velocidade.setText("-- MiB/s | ETA: --:--")
+            self.pbar_global.setValue(0)
+            self._remover_linhas_incompletas()
+            self.btn_avulso.setEnabled(True)
+            self.btn_curso.setEnabled(True)
+            self.btn_pausar.setEnabled(False)
+            self.btn_cancelar.setEnabled(False)
+            self.btn_pausar.setText("⏸️ Pausar")
+
+    def _limpar_concluidos(self):
+        em_andamento = bool(self.worker and self.worker.isRunning())
+        for row in reversed(range(self.tabela.rowCount())):
+            pbar = self.tabela.cellWidget(row, 3)
+            if isinstance(pbar, QProgressBar) and (pbar.value() >= 100 or not em_andamento):
+                self.tabela.removeRow(row)
+
+    def _remover_linhas_incompletas(self):
+        for row in reversed(range(self.tabela.rowCount())):
+            pbar = self.tabela.cellWidget(row, 3)
+            if isinstance(pbar, QProgressBar) and pbar.value() < 100:
+                self.tabela.removeRow(row)
+
+    def _iniciar_download(self, modo_avulso):
+        url = self.txt_url.text().strip()
+        email = self.txt_email.text().strip()
+        senha = self.txt_senha.text().strip()
+        destino = self.txt_destino.text().strip()
+        if not url or not email or not senha:
+            QMessageBox.warning(self, "Campos Vazios", "Preencha o Link, E-mail e Senha antes de iniciar!")
+            return
+        nome_aula = self.txt_aula.text().strip()
+        if modo_avulso and not nome_aula:
+            QMessageBox.warning(self, "Nome da aula", "Digite o nome da aula como aparece no menu do curso.")
+            return
+        opcoes = {
+            "baixar_anexos": self.chk_anexos.isChecked(),
+            "gerar_txt": self.chk_txt.isChecked(),
+            "notificar_som": self.chk_notif.isChecked(),
+            "qualidade": self.cmb_qualidade.currentText(),
+            "nome_conteudo": self.txt_pasta.text().strip(),
+            "estrutura": self.cmb_estrutura.currentText(),
+            "midias": self.cmb_midias.currentText(),
+            "nome_aula": nome_aula,
+        }
+        self.btn_avulso.setEnabled(False)
+        self.btn_curso.setEnabled(False)
+        self.btn_pausar.setEnabled(True)
+        self.btn_cancelar.setEnabled(True)
+        self.btn_pausar.setText("⏸️ Pausar")
+        self.worker = GreennWorker(url, email, senha, destino, modo_avulso=modo_avulso, opcoes=opcoes)
+        self.worker.progresso.connect(self._on_progresso)
+        self.worker.velocidade.connect(self.lbl_velocidade.setText)
+        self.worker.item_progresso.connect(self._on_item_progresso)
+        self.worker.item_concluido.connect(self._on_item_concluido)
+        self.worker.concluido.connect(self._on_concluido)
+        self.worker.start()
+
+    def _on_concluido(self, sucesso, mensagem):
+        self.btn_avulso.setEnabled(True)
+        self.btn_curso.setEnabled(True)
+        self.btn_pausar.setEnabled(False)
+        self.btn_cancelar.setEnabled(False)
+        if self.chk_notif.isChecked():
+            from PySide6.QtWidgets import QApplication
+            QApplication.beep()
+        if sucesso:
+            QMessageBox.information(self, "Greenn Club", mensagem)
+        else:
+            QMessageBox.critical(self, "Greenn Club", mensagem)
+
+    def _on_progresso(self, msg, pct):
+        self.pbar_global.setValue(pct)
+        self.lbl_status_global.setText(msg)
+
+    def _criar_barra_status(self):
+        pbar = QProgressBar()
+        pbar.setRange(0, 100)
+        pbar.setValue(0)
+        pbar.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        pbar.setStyleSheet(f"""
+            QProgressBar {{
+                border: 1px solid #2c3d34; border-radius: 6px; text-align: center;
+                background-color: #101614; color: #ffffff; font-size: 11px; font-weight: bold;
+            }}
+            QProgressBar::chunk {{ background-color: {VERDE}; border-radius: 4px; }}
+        """)
+        return pbar
+
+    def _on_item_progresso(self, num_str, pct):
+        for row in range(self.tabela.rowCount()):
+            item_num = self.tabela.item(row, 0)
+            if item_num and item_num.text() == str(num_str):
+                pbar = self.tabela.cellWidget(row, 3)
+                if isinstance(pbar, QProgressBar):
+                    pbar.setValue(int(pct))
+                break
+
+    def _on_item_concluido(self, item):
+        num = str(item.get("num", ""))
+        titulo = re.sub(r"^\d{2}\s+-\s+", "", str(item.get("titulo", ""))).replace("_", " ").strip()
+        caminho = str(item.get("caminho", ""))
+        status = str(item.get("status", ""))
+        linha = -1
+        for row in range(self.tabela.rowCount()):
+            item_num = self.tabela.item(row, 0)
+            if item_num and item_num.text() == num:
+                linha = row
+                break
+        if linha < 0:
+            linha = self.tabela.rowCount()
+            self.tabela.insertRow(linha)
+            item_num = QTableWidgetItem(num)
+            item_num.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.tabela.setItem(linha, 0, item_num)
+            self.tabela.setItem(linha, 1, QTableWidgetItem(titulo))
+            self.tabela.setItem(linha, 2, QTableWidgetItem(caminho))
+            self.tabela.setCellWidget(linha, 3, self._criar_barra_status())
+        else:
+            self.tabela.setItem(linha, 2, QTableWidgetItem(caminho))
+        pbar = self.tabela.cellWidget(linha, 3)
+        if not isinstance(pbar, QProgressBar):
+            return
+        if status == "Concluído":
+            pbar.setValue(100)
+            pbar.setFormat("Concluído (100%)")
+        elif status == "Sem vídeo":
+            pbar.setValue(100)
+            pbar.setFormat("Sem vídeo")
+        elif status in ("Erro", "Protegido"):
+            pbar.setValue(100)
+            pbar.setFormat(status)
+            pbar.setStyleSheet("""
+                QProgressBar {
+                    border: 1px solid #2c3d34; border-radius: 6px; text-align: center;
+                    background-color: #101614; color: #ffffff; font-size: 11px; font-weight: bold;
+                }
+                QProgressBar::chunk { background-color: #e74c3c; border-radius: 4px; }
+            """)
+        else:
+            pbar.setFormat("%p%")
