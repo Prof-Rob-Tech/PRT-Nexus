@@ -8,8 +8,7 @@ Description: Gerenciador de downloads assíncrono com extração do título do v
 
 import os
 import shutil
-from PySide6.QtCore import Qt, Signal, Slot, QThread
-from PySide6.QtGui import QColor
+from PySide6.QtCore import Qt, Signal, Slot, QThread, QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -248,11 +247,12 @@ class DownloadsView(QWidget):
         main_layout.addWidget(input_card)
 
         # Tabela
-        self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["Título", "Progresso", "Tamanho", "Status", ""])
+        self.table = QTableWidget(0, 4)
+        self.table.setHorizontalHeaderLabels(["Título", "Progresso", "Tamanho", "Status"])
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(46)
-        self.table.setShowGrid(False)
+        self.table.setShowGrid(True)
+        self.table.setGridStyle(Qt.PenStyle.SolidLine)
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
@@ -264,18 +264,25 @@ class DownloadsView(QWidget):
                 border-radius: 10px;
                 color: #ffffff;
                 outline: none;
+                gridline-color: #3a3a3a;
             }}
             QHeaderView::section {{
                 background-color: #1c1c1c;
                 color: #ffffff;
                 padding: 8px;
+                padding-left: 8px;
                 font-weight: bold;
-                border: none;
-                border-bottom: 1px solid #2c2c2c;
+                border-top: none;
+                border-left: none;
+                border-right: 1px solid #3a3a3a;
+                border-bottom: 1px solid #3a3a3a;
+            }}
+            QHeaderView::section:last {{
+                border-right: none;
             }}
             QTableWidget::item {{
-                padding: 6px 8px;
-                border-bottom: 1px solid #242424;
+                padding: 4px 8px;
+                border: none;
             }}
             QTableWidget::item:selected {{
                 background-color: #243044;
@@ -284,21 +291,70 @@ class DownloadsView(QWidget):
         """)
 
         header = self.table.horizontalHeader()
-        header.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        alinhamento = Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter
+        header.setDefaultAlignment(alinhamento)
+        for coluna in range(self.table.columnCount()):
+            item = self.table.horizontalHeaderItem(coluna)
+            if item is not None:
+                item.setTextAlignment(alinhamento)
+        header.setHighlightSections(False)
+        header.setMinimumSectionSize(28)
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
         header.setStretchLastSection(False)
+        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         self.table.setColumnWidth(0, 520)
         self.table.setColumnWidth(1, 170)
-        self.table.setColumnWidth(2, 100)
-        self.table.setColumnWidth(3, 150)
-        self.table.setColumnWidth(4, 36)
+        self.table.setColumnWidth(2, 110)
+        self.table.setColumnWidth(3, 220)
+        self._minimo_coluna = (160, 130, 110, 180)
+        self._ajustando_colunas = False
+        header.sectionResized.connect(self._bater_colunas)
+        QTimer.singleShot(0, self._bater_colunas)
 
         main_layout.addWidget(self.table, stretch=1)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._bater_colunas()
+
+    def _bater_colunas(self, indice=None, antigo=0, novo=0):
+        if self._ajustando_colunas:
+            return
+        header = self.table.horizontalHeader()
+        viewport = self.table.viewport().width()
+        if viewport <= 0:
+            return
+        minimos = self._minimo_coluna
+        self._ajustando_colunas = True
+        try:
+            teto = viewport - minimos[3]
+            soma = sum(header.sectionSize(i) for i in range(3))
+            if soma > teto:
+                falta = soma - teto
+                if indice == 1:
+                    ordem = [0, 2, 1]
+                elif indice == 2:
+                    ordem = [0, 1, 2]
+                elif indice == 0:
+                    ordem = [2, 1, 0]
+                else:
+                    ordem = [0, 2, 1]
+                for coluna in ordem:
+                    atual = header.sectionSize(coluna)
+                    corta = min(falta, max(0, atual - minimos[coluna]))
+                    if corta:
+                        header.resizeSection(coluna, atual - corta)
+                        falta -= corta
+                    if falta <= 0:
+                        break
+                soma = sum(header.sectionSize(i) for i in range(3))
+            header.resizeSection(3, max(minimos[3], viewport - soma))
+        finally:
+            self._ajustando_colunas = False
 
     def add_download_url(self, url: str) -> None:
         self.txt_url.clear()
@@ -315,7 +371,8 @@ class DownloadsView(QWidget):
 
     def _remove_table_row_by_widget(self, widget: QWidget) -> None:
         for r in range(self.table.rowCount()):
-            if self.table.cellWidget(r, 4) == widget:
+            caixa = self.table.cellWidget(r, 3)
+            if caixa is not None and caixa.findChild(QPushButton) == widget:
                 self.table.removeRow(r)
                 break
 
@@ -336,7 +393,7 @@ class DownloadsView(QWidget):
 
         item_title = QTableWidgetItem("Obtendo título...")
         item_title.setToolTip(url)
-        item_title.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        item_title.setTextAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
         self.table.setItem(row, 0, item_title)
 
         progress_bar = QProgressBar()
@@ -360,26 +417,40 @@ class DownloadsView(QWidget):
                 border-radius: 3px;
             }}
         """)
-        self.table.setCellWidget(row, 1, progress_bar)
+        faixa_progresso = QWidget()
+        faixa_progresso.setStyleSheet("background: transparent; border: none;")
+        caixa_progresso = QHBoxLayout(faixa_progresso)
+        caixa_progresso.setContentsMargins(8, 0, 8, 0)
+        caixa_progresso.addWidget(progress_bar)
+        self.table.setCellWidget(row, 1, faixa_progresso)
 
         item_size = QTableWidgetItem("Calculando...")
-        item_size.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        item_size.setTextAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
         self.table.setItem(row, 2, item_size)
 
-        item_status = QTableWidgetItem("Conectando")
-        item_status.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        item_status.setForeground(QColor("#8ea399"))
-        self.table.setItem(row, 3, item_status)
+        item_status = QLabel("Conectando")
+        item_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        item_status.setStyleSheet("color: #8ea399; background: transparent; border: none;")
 
         btn_remove = QPushButton("×")
         btn_remove.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_remove.setToolTip("Tirar da lista")
+        btn_remove.setFixedWidth(28)
         btn_remove.setStyleSheet(
             "QPushButton { background: transparent; color: #8ea399; border: none; font-size: 16px; font-weight: bold; }"
             "QPushButton:hover { color: #f87171; }"
         )
         btn_remove.clicked.connect(lambda _, b=btn_remove: self._remove_table_row_by_widget(b))
-        self.table.setCellWidget(row, 4, btn_remove)
+
+        faixa_status = QWidget()
+        faixa_status.setStyleSheet("background: transparent; border: none;")
+        caixa_status = QHBoxLayout(faixa_status)
+        caixa_status.setContentsMargins(4, 0, 4, 0)
+        caixa_status.setSpacing(6)
+        caixa_status.addSpacing(28)
+        caixa_status.addWidget(item_status, 1)
+        caixa_status.addWidget(btn_remove)
+        self.table.setCellWidget(row, 3, faixa_status)
 
         worker = DownloadWorker(url, quality, save_dir=save_dir)
 
@@ -396,10 +467,10 @@ class DownloadsView(QWidget):
             if success:
                 progress_bar.setValue(100)
                 item_status.setText("Concluído")
-                item_status.setForeground(QColor("#4ade80"))
+                item_status.setStyleSheet("color: #4ade80; background: transparent; border: none;")
             else:
                 item_status.setText("Erro")
-                item_status.setForeground(QColor("#f87171"))
+                item_status.setStyleSheet("color: #f87171; background: transparent; border: none;")
                 item_status.setToolTip(message)
 
             if worker in self.active_workers:
