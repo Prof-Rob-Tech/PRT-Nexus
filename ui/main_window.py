@@ -4,19 +4,22 @@ PRT Nexus - Main Window & Sidebar
 Description: Janela principal com integração total da PRTSidebar e QStackedWidget.
 ===========================================================
 """
-from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QIcon, QPainter, QPixmap
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QGuiApplication, QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
+    QApplication,
     QFrame,
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPushButton,
     QScrollArea,
     QSizePolicy,
     QStackedWidget,
+    QSystemTrayIcon,
     QVBoxLayout,
     QWidget,
 )
@@ -35,6 +38,7 @@ from ui.views.home_view import HomeView
 from ui.views.kiwify_view import KiwifyView
 from ui.views.library_view import LibraryView
 from ui.views.mega_view import MegaView
+from ui.views.settings_view import SettingsView
 from ui.views.tiktok_view import TikTokView
 from ui.views.youtube_view import YouTubeView
 from ui.views.universo_view import UniversoView
@@ -89,6 +93,8 @@ class PRTSidebar(QWidget):
         super().__init__(parent)
         self.setFixedWidth(228)
         self.buttons: list[QPushButton] = []
+        self._secoes: list[QLabel] = []
+        self._ativo: QPushButton | None = None
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -103,41 +109,30 @@ class PRTSidebar(QWidget):
         header_layout.setContentsMargins(2, 0, 2, 10)
         header_layout.setSpacing(8)
 
-        logo_box = QLabel()
-        logo_box.setFixedSize(40, 40)
-        logo_box.setPixmap(svg_to_icon(SVG_ICONS["bolt"], 24).pixmap(24, 24))
-        logo_box.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        logo_box.setStyleSheet(
-            "background-color: #1E1E24; border: 1px solid #2D2D35; border-radius: 10px;"
-        )
-        header_layout.addWidget(logo_box)
+        self.logo_box = QLabel()
+        self.logo_box.setFixedSize(40, 40)
+        self.logo_box.setPixmap(svg_to_icon(SVG_ICONS["bolt"], 24).pixmap(24, 24))
+        self.logo_box.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        header_layout.addWidget(self.logo_box)
 
         titles_layout = QVBoxLayout()
         titles_layout.setContentsMargins(0, 0, 0, 0)
         titles_layout.setSpacing(2)
 
-        lbl_title = QLabel("PRT Nexus")
-        lbl_title.setStyleSheet(
-            "font-size: 15px; font-weight: 700; color: #F4F4F5; background: transparent; border: none;"
-        )
+        self.lbl_title = QLabel("PRT Nexus")
+        self.lbl_subtitle = QLabel("ULTRA DOWNLOADER")
 
-        lbl_subtitle = QLabel("ULTRA DOWNLOADER")
-        lbl_subtitle.setStyleSheet(
-            "font-size: 9px; font-weight: 700; color: #3B82F6; letter-spacing: 0.2px; background: transparent; border: none;"
-        )
-
-        titles_layout.addWidget(lbl_title)
-        titles_layout.addWidget(lbl_subtitle)
+        titles_layout.addWidget(self.lbl_title)
+        titles_layout.addWidget(self.lbl_subtitle)
         header_layout.addLayout(titles_layout)
         header_layout.addStretch()
 
         main_layout.addWidget(header_container)
 
         # Divisor
-        divider = QFrame()
-        divider.setFrameShape(QFrame.Shape.HLine)
-        divider.setStyleSheet("background-color: #222226; max-height: 1px; border: none;")
-        main_layout.addWidget(divider)
+        self.divisor = QFrame()
+        self.divisor.setFrameShape(QFrame.Shape.HLine)
+        main_layout.addWidget(self.divisor)
 
         # Scroll
         scroll = QScrollArea()
@@ -186,27 +181,54 @@ class PRTSidebar(QWidget):
         main_layout.addWidget(scroll)
 
         # Rodapé
-        footer_label = QLabel("PRT Labs v1.0.0")
-        footer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        footer_label.setStyleSheet(
-            "font-size: 10px; font-weight: 500; color: #52525B; padding: 4px; background: transparent; border: none;"
-        )
-        main_layout.addWidget(footer_label)
+        self.footer_label = QLabel("PRT Labs v1.0.0")
+        self.footer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        main_layout.addWidget(self.footer_label)
 
-        self.setStyleSheet(
-            "background-color: #111113; border-right: 1px solid #222226;"
-        )
+        self.aplicar_tema()
 
         if first_btn:
             self._set_active_button(first_btn)
 
     def _add_section_label(self, layout: QVBoxLayout, text: str) -> None:
         lbl = QLabel(text)
-        lbl.setStyleSheet(
-            "font-size: 10px; font-weight: 700; color: #52525B; "
-            "margin-top: 14px; margin-bottom: 4px; margin-left: 8px; background: transparent; border: none; letter-spacing: 0.5px;"
-        )
+        self._secoes.append(lbl)
         layout.addWidget(lbl)
+
+    def aplicar_tema(self) -> None:
+        """Repinta a barra lateral com a paleta atual."""
+        self.setStyleSheet(
+            f"background-color: {ThemeColors.SIDEBAR_BG}; border-right: 1px solid {ThemeColors.SIDEBAR_BORDER};"
+        )
+        self.logo_box.setStyleSheet(
+            f"background-color: {ThemeColors.SIDEBAR_LOGO_BG}; "
+            f"border: 1px solid {ThemeColors.SIDEBAR_LOGO_BORDER}; border-radius: 10px;"
+        )
+        self.lbl_title.setStyleSheet(
+            f"font-size: 15px; font-weight: 700; color: {ThemeColors.SIDEBAR_TITLE}; background: transparent; border: none;"
+        )
+        self.lbl_subtitle.setStyleSheet(
+            f"font-size: 9px; font-weight: 700; color: {ThemeColors.SIDEBAR_ACCENT}; "
+            "letter-spacing: 0.2px; background: transparent; border: none;"
+        )
+        self.divisor.setStyleSheet(
+            f"background-color: {ThemeColors.SIDEBAR_BORDER}; max-height: 1px; border: none;"
+        )
+        self.footer_label.setStyleSheet(
+            f"font-size: 10px; font-weight: 500; color: {ThemeColors.SIDEBAR_MUTED}; "
+            "padding: 4px; background: transparent; border: none;"
+        )
+        for rotulo in self._secoes:
+            rotulo.setStyleSheet(
+                f"font-size: 10px; font-weight: 700; color: {ThemeColors.SIDEBAR_MUTED}; "
+                "margin-top: 14px; margin-bottom: 4px; margin-left: 8px; "
+                "background: transparent; border: none; letter-spacing: 0.5px;"
+            )
+        for botao in self.buttons:
+            if botao is self._ativo:
+                self._apply_active_style(botao)
+            else:
+                self._apply_normal_style(botao)
 
     def _add_nav_btn(self, layout: QVBoxLayout, text: str, icon_key: str) -> QPushButton:
         btn = QPushButton(f"  {text}")
@@ -236,6 +258,7 @@ class PRTSidebar(QWidget):
         self.navigation_requested.emit(route_name)
 
     def _set_active_button(self, active_btn: QPushButton) -> None:
+        self._ativo = active_btn
         for btn in self.buttons:
             if btn == active_btn:
                 self._apply_active_style(btn)
@@ -243,26 +266,26 @@ class PRTSidebar(QWidget):
                 self._apply_normal_style(btn)
 
     def _apply_active_style(self, btn: QPushButton) -> None:
-        btn.setStyleSheet("""
-            QPushButton {
-                background-color: #1F1F24;
-                color: #FFFFFF;
+        btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {ThemeColors.SIDEBAR_ACTIVE_BG};
+                color: {ThemeColors.TEXT};
                 border: none;
-                border-left: 3px solid #3B82F6;
+                border-left: 3px solid {ThemeColors.SIDEBAR_ACCENT};
                 border-radius: 0px 6px 6px 0px;
                 padding: 7px 10px;
                 text-align: left;
                 font-size: 13px;
                 font-weight: 600;
                 outline: none;
-            }
+            }}
         """)
 
     def _apply_normal_style(self, btn: QPushButton) -> None:
-        btn.setStyleSheet("""
-            QPushButton {
+        btn.setStyleSheet(f"""
+            QPushButton {{
                 background-color: transparent;
-                color: #9E9EA9;
+                color: {ThemeColors.SIDEBAR_TEXT};
                 border: none;
                 border-left: 3px solid transparent;
                 border-radius: 0px 6px 6px 0px;
@@ -271,11 +294,11 @@ class PRTSidebar(QWidget):
                 font-size: 13px;
                 font-weight: 500;
                 outline: none;
-            }
-            QPushButton:hover {
-                background-color: #18181C;
-                color: #E4E4E7;
-            }
+            }}
+            QPushButton:hover {{
+                background-color: {ThemeColors.SIDEBAR_HOVER_BG};
+                color: {ThemeColors.SIDEBAR_HOVER_TEXT};
+            }}
         """)
 
 
@@ -284,8 +307,17 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("PRT-Nexus")
         self.resize(1280, 720)
+        self._ficar_na_bandeja = db_manager.get_setting("bandeja", "0") == "1"
+        self.tray: QSystemTrayIcon | None = None
+        self._menu_bandeja: QMenu | None = None
+        self._aviso: QFrame | None = None
 
         self._setup_ui()
+        if self._ficar_na_bandeja:
+            self._garantir_bandeja()
+            app = QApplication.instance()
+            if app is not None:
+                app.setQuitOnLastWindowClosed(False)
 
     def _setup_ui(self) -> None:
         central_widget = QWidget(self)
@@ -315,6 +347,9 @@ class MainWindow(QMainWindow):
         self.browser_view.pagina_visitada.connect(self._registrar_navegacao)
         self.favorites_view.open_in_browser.connect(self._abrir_no_navegador)
         self.history_view.open_in_browser.connect(self._abrir_no_navegador)
+        self.settings_view = SettingsView()
+        self.settings_view.tema_mudou.connect(self.sincronizar_tema)
+        self.settings_view.chk_bandeja.toggled.connect(self.definir_bandeja)
         self.kiwify_view = KiwifyView()
         self.universo_view = UniversoView(downloads_view=self.downloads_view)
         self.chip7_view = Chip7View(downloads_view=self.downloads_view)
@@ -333,6 +368,7 @@ class MainWindow(QMainWindow):
         self.stacked_widget.addWidget(self.library_view)
         self.stacked_widget.addWidget(self.favorites_view)
         self.stacked_widget.addWidget(self.history_view)
+        self.stacked_widget.addWidget(self.settings_view)
         self.stacked_widget.addWidget(self.kiwify_view)
         self.stacked_widget.addWidget(self.universo_view)
         self.stacked_widget.addWidget(self.chip7_view)
@@ -347,6 +383,7 @@ class MainWindow(QMainWindow):
         # Layout Principal
         main_layout.addWidget(self.sidebar)
         main_layout.addWidget(self.stacked_widget)
+        self.sincronizar_tema()
 
     def _on_navigation_requested(self, route_name: str) -> None:
         """Alterna a view exibida com base no botão clicado na barra lateral."""
@@ -357,6 +394,7 @@ class MainWindow(QMainWindow):
             "Biblioteca": self.library_view,
             "Favoritos": self.favorites_view,
             "Histórico": self.history_view,
+            "Configurações": self.settings_view,
             "Kiwify": self.kiwify_view,
             "Universo Técnico": self.universo_view,
             "Chip 7": self.chip7_view,
@@ -390,3 +428,132 @@ class MainWindow(QMainWindow):
     def _abrir_no_navegador(self, url: str) -> None:
         self.browser_view.load_url(url)
         self._on_navigation_requested("Navegador")
+
+    def sincronizar_tema(self) -> None:
+        """Ajusta a moldura da janela depois que a paleta muda."""
+        self.sidebar.aplicar_tema()
+        self.browser_view.atualizar_icones()
+        self.settings_view.pintar()
+        self.stacked_widget.setObjectName("paginas")
+        self.setStyleSheet(
+            f"QMainWindow {{ background-color: {ThemeColors.BACKGROUND}; color: {ThemeColors.TEXT}; }}"
+        )
+        self.stacked_widget.setStyleSheet(
+            f"QStackedWidget#paginas {{ background-color: {ThemeColors.BACKGROUND}; }}"
+        )
+
+    def definir_bandeja(self, ativo: bool) -> None:
+        self._ficar_na_bandeja = ativo
+        db_manager.set_setting("bandeja", "1" if ativo else "0")
+        app = QApplication.instance()
+        if ativo:
+            self._garantir_bandeja()
+            if app is not None:
+                app.setQuitOnLastWindowClosed(False)
+            return
+        if app is not None:
+            app.setQuitOnLastWindowClosed(True)
+
+    def _garantir_bandeja(self) -> None:
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            return
+        if self.tray is None:
+            self.tray = QSystemTrayIcon(svg_to_icon(SVG_ICONS["bolt"], 32), self)
+            self.tray.setToolTip("PRT Nexus")
+            menu = QMenu()
+            abrir = menu.addAction("Abrir")
+            abrir.triggered.connect(self._mostrar_de_novo)
+            sair = menu.addAction("Sair")
+            sair.triggered.connect(self._sair_de_vez)
+            self.tray.setContextMenu(menu)
+            self.tray.activated.connect(self._bandeja_clicada)
+            self._menu_bandeja = menu
+        self.tray.show()
+
+    def _bandeja_clicada(self, motivo: QSystemTrayIcon.ActivationReason) -> None:
+        if motivo == QSystemTrayIcon.ActivationReason.Trigger:
+            self._mostrar_de_novo()
+
+    def _mostrar_de_novo(self) -> None:
+        self._fechar_aviso()
+        self.showMaximized()
+        self.raise_()
+        self.activateWindow()
+
+    def _sair_de_vez(self) -> None:
+        self._ficar_na_bandeja = False
+        QTimer.singleShot(0, self._encerrar)
+
+    def _encerrar(self) -> None:
+        self._ficar_na_bandeja = False
+        self._fechar_aviso()
+        if self.tray is not None:
+            self.tray.hide()
+        app = QApplication.instance()
+        if app is not None:
+            app.setQuitOnLastWindowClosed(True)
+            app.quit()
+
+    def _fechar_aviso(self) -> None:
+        if self._aviso is not None:
+            self._aviso.close()
+            self._aviso = None
+
+    def _avisar_na_bandeja(self) -> None:
+        """Aviso no canto do relógio, com a janela principal já escondida."""
+        if not self.isHidden():
+            return
+        self._fechar_aviso()
+
+        aviso = QFrame()
+        aviso.setObjectName("avisoBandeja")
+        aviso.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.Tool
+        )
+        aviso.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+        aviso.setFixedWidth(340)
+        aviso.setStyleSheet(f"""
+            QFrame#avisoBandeja {{
+                background-color: {ThemeColors.CARD};
+                border: 1px solid {ThemeColors.BORDER};
+                border-radius: 10px;
+            }}
+            QLabel {{
+                background: transparent;
+                border: none;
+            }}
+        """)
+        caixa = QVBoxLayout(aviso)
+        caixa.setContentsMargins(14, 12, 14, 12)
+        caixa.setSpacing(4)
+
+        titulo = QLabel("PRT Nexus")
+        titulo.setStyleSheet(f"color: {ThemeColors.TEXT}; font-size: 13px; font-weight: 700;")
+        texto = QLabel(
+            "O aplicativo continua rodando na bandeja.\n"
+            "Clique no ícone ao lado do relógio para abrir de novo."
+        )
+        texto.setWordWrap(True)
+        texto.setStyleSheet(f"color: {ThemeColors.TEXT_SECONDARY}; font-size: 12px;")
+        caixa.addWidget(titulo)
+        caixa.addWidget(texto)
+        aviso.adjustSize()
+        aviso.mousePressEvent = lambda _evento: aviso.close()
+
+        tela = QGuiApplication.primaryScreen()
+        if tela is not None:
+            area = tela.availableGeometry()
+            aviso.move(area.right() - aviso.width() - 16, area.bottom() - aviso.height() - 16)
+        aviso.show()
+        self._aviso = aviso
+        QTimer.singleShot(5000, self._fechar_aviso)
+
+    def closeEvent(self, event) -> None:
+        if self._ficar_na_bandeja and self.tray is not None and self.tray.isVisible():
+            event.ignore()
+            self.hide()
+            QTimer.singleShot(200, self._avisar_na_bandeja)
+            return
+        super().closeEvent(event)

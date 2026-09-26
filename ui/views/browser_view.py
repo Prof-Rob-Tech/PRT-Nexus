@@ -36,9 +36,9 @@ def _icone(svg: str, tamanho: int = 16) -> QIcon:
     return QIcon(pixmap)
 
 
-_SETA_VOLTAR = '<svg viewBox="0 0 24 24" fill="none" stroke="#E4E4E7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>'
-_SETA_AVANCAR = '<svg viewBox="0 0 24 24" fill="none" stroke="#E4E4E7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>'
-_RECARREGAR = '<svg viewBox="0 0 24 24" fill="none" stroke="#E4E4E7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.5 15a9 9 0 1 1-2.1-9.4L23 10"/></svg>'
+_SETA_VOLTAR = '<svg viewBox="0 0 24 24" fill="none" stroke="{cor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>'
+_SETA_AVANCAR = '<svg viewBox="0 0 24 24" fill="none" stroke="{cor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>'
+_RECARREGAR = '<svg viewBox="0 0 24 24" fill="none" stroke="{cor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.5 15a9 9 0 1 1-2.1-9.4L23 10"/></svg>'
 
 
 class MediaUrlInterceptor(QWebEngineUrlRequestInterceptor):
@@ -88,9 +88,7 @@ class BrowserView(QWidget):
         self.btn_back = QPushButton()
         self.btn_forward = QPushButton()
         self.btn_reload = QPushButton()
-        self.btn_back.setIcon(_icone(_SETA_VOLTAR))
-        self.btn_forward.setIcon(_icone(_SETA_AVANCAR))
-        self.btn_reload.setIcon(_icone(_RECARREGAR))
+        self.atualizar_icones()
         self.btn_back.setToolTip("Voltar")
         self.btn_forward.setToolTip("Avançar")
         self.btn_reload.setToolTip("Recarregar")
@@ -232,6 +230,18 @@ class BrowserView(QWidget):
         self.btn_reload.clicked.connect(self.web_view.reload)
 
         layout.addWidget(self.web_view, stretch=1)
+
+    def atualizar_icones(self) -> None:
+        cor = ThemeColors.TEXT
+        self.btn_back.setIcon(_icone(_SETA_VOLTAR.format(cor=cor)))
+        self.btn_forward.setIcon(_icone(_SETA_AVANCAR.format(cor=cor)))
+        self.btn_reload.setIcon(_icone(_RECARREGAR.format(cor=cor)))
+        self.setAutoFillBackground(True)
+        paleta = self.palette()
+        paleta.setColor(self.backgroundRole(), QColor(ThemeColors.BACKGROUND))
+        self.setPalette(paleta)
+        if getattr(self, "web_view", None) is not None:
+            self.web_view.page().setBackgroundColor(QColor(ThemeColors.BACKGROUND))
 
     def load_url(self, url_str: str) -> None:
         """Carrega uma URL no navegador."""

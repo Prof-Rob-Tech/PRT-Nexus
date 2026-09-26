@@ -14,6 +14,8 @@ from PySide6.QtWidgets import QApplication
 QCoreApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
 os.environ["QTWEBENGINE_DISABLE_SANDBOX"] = "1"
 
+from database.manager import db_manager
+from theme.colors import PALETAS, ThemeColors, repintar
 from ui.main_window import MainWindow
 
 
@@ -21,7 +23,16 @@ def main():
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
+    chave = db_manager.get_setting("tema", "slate")
+    if chave not in PALETAS:
+        chave = "slate"
+    origem = ThemeColors.paleta()
+    ThemeColors.aplicar(chave)
+
     window = MainWindow()
+    if chave != "slate":
+        repintar(origem, ThemeColors.paleta())
+        window.sincronizar_tema()
     window.showMaximized()
     
     sys.exit(app.exec())

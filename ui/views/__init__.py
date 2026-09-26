@@ -16,6 +16,7 @@ from ui.views.home_view import HomeView
 from ui.views.kiwify_view import KiwifyView
 from ui.views.library_view import LibraryView
 from ui.views.mega_view import MegaView
+from ui.views.settings_view import SettingsView
 from ui.views.tiktok_view import TikTokView
 from ui.views.vimeo_view import VimeoView
 from ui.views.youtube_view import YouTubeView
@@ -32,6 +33,7 @@ __all__ = [
     "KiwifyView",
     "LibraryView",
     "MegaView",
+    "SettingsView",
     "TikTokView",
     "GreennView",
     "VimeoView",

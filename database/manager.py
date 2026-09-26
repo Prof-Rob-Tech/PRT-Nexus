@@ -95,6 +95,13 @@ class DatabaseManager:
                     );
                 """)
 
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS app_settings (
+                        chave TEXT PRIMARY KEY,
+                        valor TEXT NOT NULL
+                    );
+                """)
+
                 conn.commit()
                 logger.info(f"Banco de dados inicializado em: {self.db_path}")
         except Exception as e:
@@ -215,6 +222,36 @@ class DatabaseManager:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM history")
+            conn.commit()
+
+    # ==========================================
+    # CONFIGURAÇÕES
+    # ==========================================
+
+    def get_setting(self, chave: str, padrao: str = "") -> str:
+        """Lê uma preferência salva. Devolve o padrão se ainda não existir."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT valor FROM app_settings WHERE chave = ?", (chave,))
+                linha = cursor.fetchone()
+                if linha is None:
+                    return padrao
+                return str(linha["valor"])
+        except Exception:
+            return padrao
+
+    def set_setting(self, chave: str, valor: str) -> None:
+        """Grava uma preferência."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO app_settings (chave, valor) VALUES (?, ?)
+                ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor
+                """,
+                (chave, valor),
+            )
             conn.commit()
 
 
