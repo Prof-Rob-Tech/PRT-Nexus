@@ -9,6 +9,7 @@ Description: Gerenciador de downloads assíncrono com extração do título do v
 import os
 import shutil
 from PySide6.QtCore import Qt, Signal, Slot, QThread
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -172,9 +173,12 @@ class DownloadsView(QWidget):
         main_layout.setContentsMargins(24, 24, 24, 24)
         main_layout.setSpacing(20)
 
-        lbl_title = QLabel("Gerenciador de Downloads")
-        lbl_title.setStyleSheet(f"font-size: 22px; font-weight: bold; color: {ThemeColors.TEXT};")
+        lbl_title = QLabel("Downloads")
+        lbl_title.setStyleSheet("font-size: 22px; font-weight: bold; color: #ffffff; background: transparent;")
+        lbl_sub = QLabel("Os vídeos do navegador e os links colados aqui entram nesta fila.")
+        lbl_sub.setStyleSheet("font-size: 13px; color: #8ea399; background: transparent;")
         main_layout.addWidget(lbl_title)
+        main_layout.addWidget(lbl_sub)
 
         input_card = QWidget()
         input_card.setStyleSheet(f"background-color: {ThemeColors.CARD}; border-radius: 8px;")
@@ -211,6 +215,12 @@ class DownloadsView(QWidget):
                 padding: 8px 12px;
                 font-size: 13px;
             }}
+            QComboBox QAbstractItemView {{
+                background-color: #1c1c1c;
+                color: #ffffff;
+                selection-background-color: #0066CC;
+                border: 1px solid {ThemeColors.BORDER};
+            }}
         """)
 
         self.btn_download = QPushButton("⚡ Baixar")
@@ -239,40 +249,54 @@ class DownloadsView(QWidget):
 
         # Tabela
         self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["Item / Título", "Progresso", "Tamanho", "Status", "Ações"])
+        self.table.setHorizontalHeaderLabels(["Título", "Progresso", "Tamanho", "Status", ""])
+        self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(46)
+        self.table.setShowGrid(False)
+        self.table.setAlternatingRowColors(True)
+        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.table.setStyleSheet(f"""
             QTableWidget {{
-                background-color: {ThemeColors.CARD};
-                border: 1px solid {ThemeColors.BORDER};
-                border-radius: 8px;
-                gridline-color: {ThemeColors.BORDER};
-                color: {ThemeColors.TEXT};
+                background-color: #121212;
+                alternate-background-color: #181818;
+                border: 1px solid #2c2c2c;
+                border-radius: 10px;
+                color: #ffffff;
+                outline: none;
             }}
             QHeaderView::section {{
-                background-color: {ThemeColors.BACKGROUND};
-                color: {ThemeColors.TEXT_SECONDARY};
-                padding: 10px;
+                background-color: #1c1c1c;
+                color: #ffffff;
+                padding: 8px;
                 font-weight: bold;
                 border: none;
-                border-bottom: 1px solid {ThemeColors.BORDER};
+                border-bottom: 1px solid #2c2c2c;
             }}
             QTableWidget::item {{
-                padding: 8px;
+                padding: 6px 8px;
+                border-bottom: 1px solid #242424;
+            }}
+            QTableWidget::item:selected {{
+                background-color: #243044;
+                color: #ffffff;
             }}
         """)
 
         header = self.table.horizontalHeader()
-        header.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        header.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        header.setStretchLastSection(False)
 
-        self.table.setColumnWidth(1, 180)
-        self.table.setColumnWidth(2, 110)
+        self.table.setColumnWidth(0, 520)
+        self.table.setColumnWidth(1, 170)
+        self.table.setColumnWidth(2, 100)
         self.table.setColumnWidth(3, 150)
-        self.table.setColumnWidth(4, 70)
+        self.table.setColumnWidth(4, 36)
 
         main_layout.addWidget(self.table, stretch=1)
 
@@ -342,13 +366,18 @@ class DownloadsView(QWidget):
         item_size.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         self.table.setItem(row, 2, item_size)
 
-        item_status = QTableWidgetItem("Conectando... ⏳")
+        item_status = QTableWidgetItem("Conectando")
         item_status.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        item_status.setForeground(QColor("#8ea399"))
         self.table.setItem(row, 3, item_status)
 
-        btn_remove = QPushButton("🗑️")
+        btn_remove = QPushButton("×")
         btn_remove.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_remove.setStyleSheet("background: transparent; border: none; font-size: 13px;")
+        btn_remove.setToolTip("Tirar da lista")
+        btn_remove.setStyleSheet(
+            "QPushButton { background: transparent; color: #8ea399; border: none; font-size: 16px; font-weight: bold; }"
+            "QPushButton:hover { color: #f87171; }"
+        )
         btn_remove.clicked.connect(lambda _, b=btn_remove: self._remove_table_row_by_widget(b))
         self.table.setCellWidget(row, 4, btn_remove)
 
@@ -366,9 +395,11 @@ class DownloadsView(QWidget):
             item_size.setText(final_size_str)
             if success:
                 progress_bar.setValue(100)
-                item_status.setText("Concluído ✅")
+                item_status.setText("Concluído")
+                item_status.setForeground(QColor("#4ade80"))
             else:
-                item_status.setText("Erro ❌")
+                item_status.setText("Erro")
+                item_status.setForeground(QColor("#f87171"))
                 item_status.setToolTip(message)
 
             if worker in self.active_workers:

@@ -302,6 +302,7 @@ class MainWindow(QMainWindow):
         self.home_view.navigate_requested.connect(self._on_navigation_requested)
         self.browser_view = BrowserView()
         self.downloads_view = DownloadsView()
+        self.browser_view.send_to_downloader.connect(self._baixar_do_navegador)
         self.kiwify_view = KiwifyView()
         self.universo_view = UniversoView(downloads_view=self.downloads_view)
         self.chip7_view = Chip7View(downloads_view=self.downloads_view)
@@ -353,3 +354,7 @@ class MainWindow(QMainWindow):
         if route_name in routes:
             self.stacked_widget.setCurrentWidget(routes[route_name])
             self.sidebar.selecionar_rota(route_name)
+
+    def _baixar_do_navegador(self, url: str, pasta: str) -> None:
+        self.downloads_view.add_url_to_queue(url, pasta or "Navegador")
+        self._on_navigation_requested("Downloads")

@@ -6,18 +6,16 @@ Description: Navegador embutido com interceptador inteligente
              e extrator de módulos/aulas do Kiwify.
 ===========================================================
 """
-from PySide6.QtCore import QUrl, Signal, Slot
+from PySide6.QtCore import QSize, Qt, QUrl, Signal
+from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
+from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
-    QHeaderView,
-    QLabel,
     QLineEdit,
     QListWidget,
     QMessageBox,
     QPushButton,
-    QTableWidget,
-    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -25,6 +23,22 @@ from PySide6.QtWebEngineCore import QWebEngineUrlRequestInterceptor
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
 from theme.colors import ThemeColors
+
+
+def _icone(svg: str, tamanho: int = 16) -> QIcon:
+    renderer = QSvgRenderer(bytes(svg, "utf-8"))
+    pixmap = QPixmap(tamanho, tamanho)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    renderer.render(painter)
+    painter.end()
+    return QIcon(pixmap)
+
+
+_SETA_VOLTAR = '<svg viewBox="0 0 24 24" fill="none" stroke="#E4E4E7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>'
+_SETA_AVANCAR = '<svg viewBox="0 0 24 24" fill="none" stroke="#E4E4E7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>'
+_RECARREGAR = '<svg viewBox="0 0 24 24" fill="none" stroke="#E4E4E7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.5 15a9 9 0 1 1-2.1-9.4L23 10"/></svg>'
 
 
 class MediaUrlInterceptor(QWebEngineUrlRequestInterceptor):
@@ -69,22 +83,29 @@ class BrowserView(QWidget):
         nav_bar.setContentsMargins(10, 8, 10, 8)
         nav_bar.setSpacing(8)
 
-        self.btn_back = QPushButton("◄")
-        self.btn_forward = QPushButton("►")
-        self.btn_reload = QPushButton("🔄")
+        self.btn_back = QPushButton()
+        self.btn_forward = QPushButton()
+        self.btn_reload = QPushButton()
+        self.btn_back.setIcon(_icone(_SETA_VOLTAR))
+        self.btn_forward.setIcon(_icone(_SETA_AVANCAR))
+        self.btn_reload.setIcon(_icone(_RECARREGAR))
+        self.btn_back.setToolTip("Voltar")
+        self.btn_forward.setToolTip("Avançar")
+        self.btn_reload.setToolTip("Recarregar")
 
         for btn in (self.btn_back, self.btn_forward, self.btn_reload):
-            btn.setFixedSize(32, 32)
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: {ThemeColors.CARD};
-                    color: {ThemeColors.TEXT};
-                    border: 1px solid {ThemeColors.BORDER};
-                    border-radius: 4px;
-                }}
-                QPushButton:hover {{
-                    background-color: {ThemeColors.BACKGROUND};
-                }}
+            btn.setFixedSize(34, 34)
+            btn.setIconSize(QSize(16, 16))
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setStyleSheet("""
+                QPushButton {
+                    background-color: transparent;
+                    border: none;
+                    border-radius: 6px;
+                }
+                QPushButton:hover {
+                    background-color: #2A2A2A;
+                }
             """)
 
         self.url_bar = QLineEdit()
@@ -113,14 +134,15 @@ class BrowserView(QWidget):
         """)
         self.btn_go.clicked.connect(self.navigate_to_url)
 
-        # Botão para capturar a lista de aulas (DIA 01, DIA 02...)
-        self.btn_extract_kiwify = QPushButton("📦 Extrair Aulas da Página")
-        self.btn_extract_kiwify.setFixedHeight(34)
-        self.btn_extract_kiwify.setStyleSheet("""
+        self.btn_baixar = QPushButton("Baixar esse vídeo")
+        self.btn_baixar.setFixedHeight(34)
+        self.btn_baixar.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_baixar.setStyleSheet("""
             QPushButton {
                 background-color: #00B563;
                 color: #FFFFFF;
-                border-radius: 4px;
+                border: none;
+                border-radius: 6px;
                 padding: 0 12px;
                 font-weight: bold;
             }
@@ -128,21 +150,24 @@ class BrowserView(QWidget):
                 background-color: #009652;
             }
         """)
-        self.btn_extract_kiwify.clicked.connect(self.extract_kiwify_structure)
+        self.btn_baixar.clicked.connect(self.baixar_pagina_atual)
 
-        self.btn_media_count = QPushButton("🎬 Mídias (0)")
+        self.btn_media_count = QPushButton("Mídias (0)")
         self.btn_media_count.setFixedHeight(34)
+        self.btn_media_count.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_media_count.setStyleSheet(f"""
             QPushButton {{
                 background-color: {ThemeColors.CARD};
-                color: {ThemeColors.PRIMARY};
+                color: {ThemeColors.TEXT};
                 border: 1px solid {ThemeColors.BORDER};
-                border-radius: 4px;
+                border-radius: 6px;
                 padding: 0 12px;
                 font-weight: bold;
             }}
+            QPushButton:hover {{
+                background-color: #323232;
+            }}
         """)
-        
         self.btn_media_count.clicked.connect(self.show_media_dialog)
 
         nav_bar.addWidget(self.btn_back)
@@ -150,19 +175,27 @@ class BrowserView(QWidget):
         nav_bar.addWidget(self.btn_reload)
         nav_bar.addWidget(self.url_bar, stretch=1)
         nav_bar.addWidget(self.btn_go)
-        nav_bar.addWidget(self.btn_extract_kiwify)
+        nav_bar.addWidget(self.btn_baixar)
         nav_bar.addWidget(self.btn_media_count)
 
         layout.addLayout(nav_bar)
 
-        # Componente WebEngine
+        self.setAutoFillBackground(True)
+        paleta = self.palette()
+        paleta.setColor(self.backgroundRole(), QColor(ThemeColors.BACKGROUND))
+        self.setPalette(paleta)
+
         self.web_view = QWebEngineView()
+        self.web_view.page().setBackgroundColor(QColor(ThemeColors.BACKGROUND))
+        self.web_view.urlChanged.connect(self.update_url_bar)
+        self.web_view.setHtml(
+            f"<html><body style='background:{ThemeColors.BACKGROUND};margin:0'></body></html>"
+        )
         
         # Interceptador de URLs
         self.interceptor = MediaUrlInterceptor(self._on_media_detected)
         self.web_view.page().profile().setUrlRequestInterceptor(self.interceptor)
 
-        self.web_view.urlChanged.connect(self.update_url_bar)
         self.btn_back.clicked.connect(self.web_view.back)
         self.btn_forward.clicked.connect(self.web_view.forward)
         self.btn_reload.clicked.connect(self.web_view.reload)
@@ -182,91 +215,110 @@ class BrowserView(QWidget):
             self.load_url(url_text)
 
     def update_url_bar(self, qurl: QUrl) -> None:
-        self.url_bar.setText(qurl.toString())
+        texto = qurl.toString()
+        if not texto or texto == "about:blank" or texto.startswith("data:"):
+            self.url_bar.clear()
+            return
+        self.url_bar.setText(texto)
+        if self._e_pagina_de_video(texto):
+            self._on_media_detected(texto)
+
+    def _e_pagina_de_video(self, url: str) -> bool:
+        baixa = (url or "").lower()
+        marcas = (
+            "youtube.com/watch",
+            "youtu.be/",
+            "vimeo.com/",
+            "tiktok.com/",
+            "instagram.com/reel",
+            "dailymotion.com/video",
+        )
+        return any(marca in baixa for marca in marcas)
 
     def _on_media_detected(self, media_url: str) -> None:
-        if media_url not in self.detected_media:
-            self.detected_media.append(media_url)
-            self.btn_media_count.setText(f"🎬 Mídias ({len(self.detected_media)})")
-
-    def extract_kiwify_structure(self) -> None:
-        """Executa um script JS no navegador para extrair Módulos (DIA 01) e Aulas (BLOCO 01..07)."""
-        js_script = """
-        (function() {
-            let items = [];
-            let currentModule = "DIA 01";
-            
-            // Procura os títulos dos módulos e das aulas no DOM da Kiwify
-            let elements = document.querySelectorAll('div, span, p, a');
-            elements.forEach(el => {
-                let text = el.innerText ? el.innerText.trim() : "";
-                if (/^DIA\\s+\\d+/i.test(text) && text.length < 15) {
-                    currentModule = text;
-                } else if (/^BLOCO\\s+\\d+/i.test(text) && text.length < 20) {
-                    items.push({
-                        module: currentModule,
-                        lesson: text,
-                        url: window.location.href
-                    });
-                }
-            });
-            
-            // Remove duplicados
-            let uniqueItems = list => Array.from(new Set(list.map(a => JSON.stringify(a)))).map(a => JSON.parse(a));
-            return uniqueItems(items);
-        })();
-        """
-        self.web_view.page().runJavaScript(js_script, self._on_kiwify_extracted)
-
-    def _on_kiwify_extracted(self, result) -> None:
-        if not result or len(result) == 0:
-            QMessageBox.information(
-                self, 
-                "Aviso", 
-                "Nenhuma estrutura de aula detetada nesta página. Certifique-se de que a barra lateral com as aulas está visível."
-            )
+        if not media_url or media_url in self.detected_media:
             return
+        self.detected_media.append(media_url)
+        self.btn_media_count.setText(f"Mídias ({len(self.detected_media)})")
 
-        count = 0
-        for item in result:
-            mod_folder = item.get("module", "DIA 01")
-            lesson_title = item.get("lesson", "Aula")
-            page_url = item.get("url", self.web_view.url().toString())
-            
-            # Envia a URL com a indicação da subpasta (ex: "Kiwify/DIA 01")
-            subfolder = f"Kiwify/{mod_folder}"
-            self.send_to_downloader.emit(page_url, subfolder)
-            count += 1
-
-        QMessageBox.information(
-            self, 
-            "Sucesso", 
-            f"Foram enviadas {count} aulas (Módulos e Blocos) para o Gerenciador de Downloads!"
-        )
+    def baixar_pagina_atual(self) -> None:
+        url = self.web_view.url().toString()
+        if not url.startswith("http"):
+            QMessageBox.information(self, "Navegador", "Abra uma página antes de baixar.")
+            return
+        self.send_to_downloader.emit(url, "Navegador")
 
     def show_media_dialog(self) -> None:
         if not self.detected_media:
-            QMessageBox.information(self, "Mídias", "Nenhum stream de vídeo válido capturado até ao momento.")
+            QMessageBox.information(
+                self,
+                "Mídias",
+                "Ainda não há vídeo nesta navegação. Abra a página do vídeo e tente de novo.",
+            )
             return
 
         dialog = QDialog(self)
-        dialog.setWindowTitle("Mídias de Vídeo Encontradas")
+        dialog.setWindowTitle("Mídias encontradas")
         dialog.setFixedSize(650, 350)
-        
+        dialog.setStyleSheet(f"""
+            QDialog {{
+                background-color: {ThemeColors.BACKGROUND};
+                color: {ThemeColors.TEXT};
+            }}
+            QListWidget {{
+                background-color: {ThemeColors.CARD};
+                color: {ThemeColors.TEXT};
+                border: 1px solid {ThemeColors.BORDER};
+                border-radius: 6px;
+            }}
+            QPushButton#btn_enviar {{
+                background-color: #00B563;
+                color: #FFFFFF;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 12px;
+                font-weight: bold;
+            }}
+            QPushButton#btn_limpar {{
+                background-color: #2b2b2b;
+                color: #ffffff;
+                border: 1px solid #3a3a3a;
+                border-radius: 6px;
+                padding: 8px 12px;
+                font-weight: bold;
+            }}
+            QPushButton#btn_limpar:hover {{
+                background-color: #8b0000;
+            }}
+        """)
         dlg_layout = QVBoxLayout(dialog)
         list_widget = QListWidget()
+        list_widget.setSelectionMode(QListWidget.SelectionMode.NoSelection)
         list_widget.addItems(self.detected_media)
         dlg_layout.addWidget(list_widget)
 
-        btn_send = QPushButton("Enviar Link Selecionado para Downloads")
+        botoes = QHBoxLayout()
+        btn_limpar = QPushButton("Limpar links")
+        btn_limpar.setObjectName("btn_limpar")
+        btn_limpar.clicked.connect(lambda: self._limpar_midias(dialog))
+        btn_send = QPushButton("Enviar lista para Downloads")
+        btn_send.setObjectName("btn_enviar")
         btn_send.clicked.connect(lambda: self._send_selected_media(list_widget, dialog))
-        dlg_layout.addWidget(btn_send)
-
+        botoes.addWidget(btn_limpar)
+        botoes.addWidget(btn_send, stretch=1)
+        dlg_layout.addLayout(botoes)
         dialog.exec()
 
+    def _limpar_midias(self, dialog: QDialog) -> None:
+        self.detected_media.clear()
+        self.btn_media_count.setText("Mídias (0)")
+        dialog.accept()
+
     def _send_selected_media(self, list_widget: QListWidget, dialog: QDialog) -> None:
-        selected_item = list_widget.currentItem()
-        if selected_item:
-            self.send_to_downloader.emit(selected_item.text(), "Kiwify/DIA 01")
-            dialog.accept()
-            QMessageBox.information(self, "Sucesso", "Link de vídeo enviado para a fila de downloads!")
+        links = [list_widget.item(i).text() for i in range(list_widget.count()) if list_widget.item(i).text()]
+        if not links:
+            QMessageBox.information(self, "Mídias", "A lista está vazia.")
+            return
+        for link in links:
+            self.send_to_downloader.emit(link, "Navegador")
+        dialog.accept()
