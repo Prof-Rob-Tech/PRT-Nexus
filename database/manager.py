@@ -69,6 +69,12 @@ class DatabaseManager:
                 """)
 
                 cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS library_hidden (
+                        file_path TEXT PRIMARY KEY
+                    );
+                """)
+
+                cursor.execute("""
                     CREATE TABLE IF NOT EXISTS favorites (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         title TEXT NOT NULL,
@@ -115,6 +121,30 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM downloads ORDER BY created_at DESC")
             return [dict(row) for row in cursor.fetchall()]
+
+    def clear_downloads(self) -> None:
+        """Apaga os registros da biblioteca. Não mexe nos arquivos em disco."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM downloads")
+            conn.commit()
+
+    def hidden_library_paths(self) -> set[str]:
+        """Caminhos que o usuário tirou da lista, sem apagar o arquivo."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT file_path FROM library_hidden")
+            return {str(row["file_path"]).lower() for row in cursor.fetchall()}
+
+    def hide_library_paths(self, paths: list[str]) -> None:
+        """Esconde caminhos da biblioteca. Os arquivos continuam na pasta."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.executemany(
+                "INSERT OR IGNORE INTO library_hidden (file_path) VALUES (?)",
+                [(caminho,) for caminho in paths if caminho],
+            )
+            conn.commit()
 
     # ==========================================
     # FAVORITOS

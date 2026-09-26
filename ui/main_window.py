@@ -29,6 +29,7 @@ from ui.views.greenn_view import GreennView
 from ui.views.hotmart_view import HotmartView
 from ui.views.home_view import HomeView
 from ui.views.kiwify_view import KiwifyView
+from ui.views.library_view import LibraryView
 from ui.views.mega_view import MegaView
 from ui.views.tiktok_view import TikTokView
 from ui.views.youtube_view import YouTubeView
@@ -302,6 +303,7 @@ class MainWindow(QMainWindow):
         self.home_view.navigate_requested.connect(self._on_navigation_requested)
         self.browser_view = BrowserView()
         self.downloads_view = DownloadsView()
+        self.library_view = LibraryView()
         self.browser_view.send_to_downloader.connect(self._baixar_do_navegador)
         self.kiwify_view = KiwifyView()
         self.universo_view = UniversoView(downloads_view=self.downloads_view)
@@ -318,6 +320,7 @@ class MainWindow(QMainWindow):
         self.stacked_widget.addWidget(self.home_view)
         self.stacked_widget.addWidget(self.browser_view)
         self.stacked_widget.addWidget(self.downloads_view)
+        self.stacked_widget.addWidget(self.library_view)
         self.stacked_widget.addWidget(self.kiwify_view)
         self.stacked_widget.addWidget(self.universo_view)
         self.stacked_widget.addWidget(self.chip7_view)
@@ -339,6 +342,7 @@ class MainWindow(QMainWindow):
             "Início": self.home_view,
             "Navegador": self.browser_view,
             "Downloads": self.downloads_view,
+            "Biblioteca": self.library_view,
             "Kiwify": self.kiwify_view,
             "Universo Técnico": self.universo_view,
             "Chip 7": self.chip7_view,
