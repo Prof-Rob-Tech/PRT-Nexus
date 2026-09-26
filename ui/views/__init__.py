@@ -15,6 +15,7 @@ from ui.views.hotmart_view import HotmartView
 from ui.views.home_view import HomeView
 from ui.views.kiwify_view import KiwifyView
 from ui.views.library_view import LibraryView
+from ui.views.license_view import LicenseView
 from ui.views.mega_view import MegaView
 from ui.views.settings_view import SettingsView
 from ui.views.tiktok_view import TikTokView
@@ -32,6 +33,7 @@ __all__ = [
     "HomeView",
     "KiwifyView",
     "LibraryView",
+    "LicenseView",
     "MegaView",
     "SettingsView",
     "TikTokView",

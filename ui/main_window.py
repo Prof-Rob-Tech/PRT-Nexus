@@ -37,6 +37,7 @@ from ui.views.hotmart_view import HotmartView
 from ui.views.home_view import HomeView
 from ui.views.kiwify_view import KiwifyView
 from ui.views.library_view import LibraryView
+from ui.views.license_view import LicenseView
 from ui.views.mega_view import MegaView
 from ui.views.settings_view import SettingsView
 from ui.views.tiktok_view import TikTokView
@@ -350,6 +351,7 @@ class MainWindow(QMainWindow):
         self.settings_view = SettingsView()
         self.settings_view.tema_mudou.connect(self.sincronizar_tema)
         self.settings_view.chk_bandeja.toggled.connect(self.definir_bandeja)
+        self.license_view = LicenseView()
         self.kiwify_view = KiwifyView()
         self.universo_view = UniversoView(downloads_view=self.downloads_view)
         self.chip7_view = Chip7View(downloads_view=self.downloads_view)
@@ -369,6 +371,7 @@ class MainWindow(QMainWindow):
         self.stacked_widget.addWidget(self.favorites_view)
         self.stacked_widget.addWidget(self.history_view)
         self.stacked_widget.addWidget(self.settings_view)
+        self.stacked_widget.addWidget(self.license_view)
         self.stacked_widget.addWidget(self.kiwify_view)
         self.stacked_widget.addWidget(self.universo_view)
         self.stacked_widget.addWidget(self.chip7_view)
@@ -395,6 +398,7 @@ class MainWindow(QMainWindow):
             "Favoritos": self.favorites_view,
             "Histórico": self.history_view,
             "Configurações": self.settings_view,
+            "Licença": self.license_view,
             "Kiwify": self.kiwify_view,
             "Universo Técnico": self.universo_view,
             "Chip 7": self.chip7_view,
@@ -434,6 +438,7 @@ class MainWindow(QMainWindow):
         self.sidebar.aplicar_tema()
         self.browser_view.atualizar_icones()
         self.settings_view.pintar()
+        self.license_view.pintar()
         self.stacked_widget.setObjectName("paginas")
         self.setStyleSheet(
             f"QMainWindow {{ background-color: {ThemeColors.BACKGROUND}; color: {ThemeColors.TEXT}; }}"
