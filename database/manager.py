@@ -184,9 +184,18 @@ class DatabaseManager:
     # ==========================================
 
     def add_history(self, title: str, url: str, platform: str = "geral", action_type: str = "download") -> int:
-        """Adiciona uma entrada ao histórico."""
+        """Adiciona uma entrada ao histórico. A mesma URL seguida só atualiza o título."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
+            cursor.execute("SELECT id, title, url, action_type FROM history ORDER BY id DESC LIMIT 1")
+            ultimo = cursor.fetchone()
+            if ultimo is not None and ultimo["url"] == url and ultimo["action_type"] == action_type:
+                titulo_antigo = str(ultimo["title"] or "")
+                if title and title != titulo_antigo and len(title) >= len(titulo_antigo):
+                    cursor.execute("UPDATE history SET title = ?, platform = ? WHERE id = ?", (title, platform, ultimo["id"]))
+                    conn.commit()
+                return int(ultimo["id"])
+
             cursor.execute("""
                 INSERT INTO history (title, url, platform, action_type)
                 VALUES (?, ?, ?, ?)
@@ -207,6 +216,28 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM history")
             conn.commit()
+
+
+def plataforma_da_url(url: str) -> str:
+    """Nome da plataforma a partir do endereço."""
+    baixa = (url or "").lower()
+    marcas = (
+        ("youtube.com", "YouTube"),
+        ("youtu.be", "YouTube"),
+        ("tiktok.com", "TikTok"),
+        ("vimeo.com", "Vimeo"),
+        ("kiwify", "Kiwify"),
+        ("hotmart", "Hotmart"),
+        ("greenn", "Greenn"),
+        ("drive.google", "Google Drive"),
+        ("mega.nz", "Mega"),
+        ("mega.co.nz", "Mega"),
+        ("universotecnico", "Universo Técnico"),
+    )
+    for marca, nome in marcas:
+        if marca in baixa:
+            return nome
+    return "Navegador"
 
 
 # Instância global Singleton

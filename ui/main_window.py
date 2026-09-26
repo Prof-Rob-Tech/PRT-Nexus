@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -20,12 +21,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from database.manager import db_manager, plataforma_da_url
 from theme.colors import ThemeColors
 from ui.views.browser_view import BrowserView
 from ui.views.chip7_view import Chip7View
 from ui.views.downloads_view import DownloadsView
 from ui.views.drive_view import DriveView
+from ui.views.favorites_view import FavoritesView
 from ui.views.greenn_view import GreennView
+from ui.views.history_view import HistoryView
 from ui.views.hotmart_view import HotmartView
 from ui.views.home_view import HomeView
 from ui.views.kiwify_view import KiwifyView
@@ -304,7 +308,13 @@ class MainWindow(QMainWindow):
         self.browser_view = BrowserView()
         self.downloads_view = DownloadsView()
         self.library_view = LibraryView()
+        self.favorites_view = FavoritesView()
+        self.history_view = HistoryView()
         self.browser_view.send_to_downloader.connect(self._baixar_do_navegador)
+        self.browser_view.favorito_pedido.connect(self._salvar_favorito)
+        self.browser_view.pagina_visitada.connect(self._registrar_navegacao)
+        self.favorites_view.open_in_browser.connect(self._abrir_no_navegador)
+        self.history_view.open_in_browser.connect(self._abrir_no_navegador)
         self.kiwify_view = KiwifyView()
         self.universo_view = UniversoView(downloads_view=self.downloads_view)
         self.chip7_view = Chip7View(downloads_view=self.downloads_view)
@@ -321,6 +331,8 @@ class MainWindow(QMainWindow):
         self.stacked_widget.addWidget(self.browser_view)
         self.stacked_widget.addWidget(self.downloads_view)
         self.stacked_widget.addWidget(self.library_view)
+        self.stacked_widget.addWidget(self.favorites_view)
+        self.stacked_widget.addWidget(self.history_view)
         self.stacked_widget.addWidget(self.kiwify_view)
         self.stacked_widget.addWidget(self.universo_view)
         self.stacked_widget.addWidget(self.chip7_view)
@@ -343,6 +355,8 @@ class MainWindow(QMainWindow):
             "Navegador": self.browser_view,
             "Downloads": self.downloads_view,
             "Biblioteca": self.library_view,
+            "Favoritos": self.favorites_view,
+            "Histórico": self.history_view,
             "Kiwify": self.kiwify_view,
             "Universo Técnico": self.universo_view,
             "Chip 7": self.chip7_view,
@@ -362,3 +376,17 @@ class MainWindow(QMainWindow):
     def _baixar_do_navegador(self, url: str, pasta: str) -> None:
         self.downloads_view.add_url_to_queue(url, pasta or "Navegador")
         self._on_navigation_requested("Downloads")
+
+    def _salvar_favorito(self, titulo: str, url: str) -> None:
+        ok, aviso = self.favorites_view.adicionar(url, titulo, "Navegador")
+        if ok:
+            QMessageBox.information(self, "Favoritos", "Página salva. Ela aparece em Favoritos.")
+            return
+        QMessageBox.information(self, "Favoritos", aviso)
+
+    def _registrar_navegacao(self, titulo: str, url: str) -> None:
+        db_manager.add_history(titulo, url, plataforma_da_url(url), "Navegação")
+
+    def _abrir_no_navegador(self, url: str) -> None:
+        self.browser_view.load_url(url)
+        self._on_navigation_requested("Navegador")

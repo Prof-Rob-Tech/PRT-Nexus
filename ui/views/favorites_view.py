@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -50,7 +51,7 @@ class FavoritesView(QWidget):
             f"font-size: 20px; font-weight: bold; color: {ThemeColors.TEXT}; background: transparent;"
         )
 
-        lbl_subtitle = QLabel("Acesso rápido às suas mídias, vídeos e conectores salvos.")
+        lbl_subtitle = QLabel("No Navegador, abra a página e clique em Favoritar. Ou cole o link aqui.")
         lbl_subtitle.setStyleSheet(
             f"font-size: 13px; color: {ThemeColors.TEXT_SECONDARY}; background: transparent;"
         )
@@ -58,6 +59,44 @@ class FavoritesView(QWidget):
         header_layout.addWidget(lbl_title)
         header_layout.addWidget(lbl_subtitle)
         main_layout.addLayout(header_layout)
+
+        incluir_layout = QHBoxLayout()
+        incluir_layout.setSpacing(8)
+        self.txt_novo = QLineEdit()
+        self.txt_novo.setPlaceholderText("Cole um link para favoritar...")
+        self.txt_novo.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {ThemeColors.CARD};
+                color: {ThemeColors.TEXT};
+                border: 1px solid {ThemeColors.BORDER};
+                border-radius: 8px;
+                padding: 10px 14px;
+                font-size: 13px;
+            }}
+            QLineEdit:focus {{
+                border-color: {ThemeColors.PRIMARY};
+            }}
+        """)
+        self.txt_novo.returnPressed.connect(self._favoritar_digitado)
+        self.btn_adicionar = QPushButton("⭐ Favoritar")
+        self.btn_adicionar.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_adicionar.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: #F5C542;
+                border: 1px solid #F5C542;
+                border-radius: 8px;
+                padding: 10px 16px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #3A3214;
+            }
+        """)
+        self.btn_adicionar.clicked.connect(self._favoritar_digitado)
+        incluir_layout.addWidget(self.txt_novo, stretch=1)
+        incluir_layout.addWidget(self.btn_adicionar)
+        main_layout.addLayout(incluir_layout)
 
         # Barra de Pesquisa
         self.search_input = QLineEdit()
@@ -113,7 +152,7 @@ class FavoritesView(QWidget):
         lbl_empty_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         lbl_empty_desc = QLabel(
-            "Você pode favoritar links no Navegador ou conteúdos capturados nos conectores para acessar rapidamente por aqui."
+            "No Navegador, abra a página e clique em Favoritar. Ou cole o link no campo acima."
         )
         lbl_empty_desc.setStyleSheet(f"""
             font-size: 13px;
@@ -155,6 +194,32 @@ class FavoritesView(QWidget):
     def showEvent(self, event) -> None:
         super().showEvent(event)
         self.load_favorites()
+
+    def adicionar(self, url: str, titulo: str = "", plataforma: str = "Navegador") -> tuple[bool, str]:
+        """Grava um link. Devolve (ok, aviso)."""
+        endereco = (url or "").strip()
+        if not endereco:
+            return False, "Cole um link."
+        if not endereco.startswith("http://") and not endereco.startswith("https://"):
+            endereco = "https://" + endereco
+
+        for item in self._favorites_data:
+            if str(item.get("url") or "").rstrip("/") == endereco.rstrip("/"):
+                return False, "Esse link já está nos favoritos."
+
+        nome = (titulo or "").strip() or endereco
+        if db_manager and hasattr(db_manager, "add_favorite"):
+            db_manager.add_favorite(nome, endereco, plataforma)
+            self.load_favorites()
+            return True, ""
+        return False, "Não foi possível salvar o favorito."
+
+    def _favoritar_digitado(self) -> None:
+        ok, aviso = self.adicionar(self.txt_novo.text(), "", "Link")
+        if ok:
+            self.txt_novo.clear()
+            return
+        QMessageBox.information(self, "Favoritos", aviso)
 
     def load_favorites(self) -> None:
         if db_manager and hasattr(db_manager, "get_all_favorites"):
@@ -219,13 +284,14 @@ class FavoritesView(QWidget):
             lbl_title.setStyleSheet(f"font-size: 14px; font-weight: bold; color: {ThemeColors.TEXT}; border: none;")
 
             lbl_url = QLabel(f"{platform} • {url}")
+            lbl_url.setWordWrap(True)
             lbl_url.setStyleSheet(f"font-size: 12px; color: {ThemeColors.TEXT_SECONDARY}; border: none;")
 
             info_layout.addWidget(lbl_title)
             info_layout.addWidget(lbl_url)
             card_layout.addLayout(info_layout, stretch=1)
 
-            btn_open = QPushButton("▶ Abrir")
+            btn_open = QPushButton("Abrir")
             btn_open.setCursor(Qt.CursorShape.PointingHandCursor)
             btn_open.setStyleSheet(f"""
                 QPushButton {{

@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -167,7 +168,7 @@ class HistoryView(QWidget):
         self.cards_container = QWidget()
         self.cards_container.setStyleSheet("background: transparent;")
         self.cards_layout = QVBoxLayout(self.cards_container)
-        self.cards_layout.setSpacing(10)
+        self.cards_layout.setSpacing(4)
         self.cards_layout.setContentsMargins(0, 0, 0, 0)
         self.cards_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
@@ -227,11 +228,17 @@ class HistoryView(QWidget):
                     background-color: {ThemeColors.BACKGROUND};
                     border: 1px solid {ThemeColors.BORDER};
                     border-radius: 6px;
-                    padding: 8px;
+                }}
+                QLabel {{
+                    padding: 0px;
+                    margin: 0px;
+                    background: transparent;
+                    border: none;
                 }}
             """)
             card_layout = QHBoxLayout(card)
-            card_layout.setContentsMargins(12, 8, 12, 8)
+            card_layout.setContentsMargins(10, 4, 10, 4)
+            card_layout.setSpacing(8)
 
             title = item.get("title") or "Página sem título"
             url = item.get("url", "")
@@ -240,20 +247,32 @@ class HistoryView(QWidget):
             created_at = item.get("created_at", "")
 
             info_layout = QVBoxLayout()
-            info_layout.setSpacing(2)
+            info_layout.setSpacing(0)
+            info_layout.setContentsMargins(0, 0, 0, 0)
 
             lbl_title = QLabel(f"🌐 {title}")
-            lbl_title.setStyleSheet(f"font-size: 14px; font-weight: bold; color: {ThemeColors.TEXT}; border: none;")
+            lbl_title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+            lbl_title.setStyleSheet(
+                f"font-size: 13px; font-weight: bold; color: {ThemeColors.TEXT}; border: none; padding: 0px; margin: 0px;"
+            )
 
-            lbl_meta = QLabel(f"{platform.upper()} • {action.upper()} • {created_at}\n{url}")
-            lbl_meta.setStyleSheet(f"font-size: 12px; color: {ThemeColors.TEXT_SECONDARY}; border: none;")
+            detalhe = f"{platform} • {action} • {created_at}"
+            if url:
+                detalhe = f"{detalhe}  ·  {url}"
+                card.setToolTip(url)
+            lbl_meta = QLabel(detalhe)
+            lbl_meta.setWordWrap(False)
+            lbl_meta.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+            lbl_meta.setStyleSheet(
+                f"font-size: 11px; color: {ThemeColors.TEXT_SECONDARY}; border: none; background: transparent; padding: 0px; margin: 0px;"
+            )
 
             info_layout.addWidget(lbl_title)
             info_layout.addWidget(lbl_meta)
             card_layout.addLayout(info_layout, stretch=1)
 
             if url:
-                btn_open = QPushButton("▶ Abrir")
+                btn_open = QPushButton("Abrir")
                 btn_open.setCursor(Qt.CursorShape.PointingHandCursor)
                 btn_open.setStyleSheet(f"""
                     QPushButton {{
@@ -261,7 +280,8 @@ class HistoryView(QWidget):
                         color: white;
                         border: none;
                         border-radius: 4px;
-                        padding: 6px 12px;
+                        padding: 4px 12px;
+                        font-size: 12px;
                         font-weight: bold;
                     }}
                 """)

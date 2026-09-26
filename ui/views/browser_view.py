@@ -6,7 +6,7 @@ Description: Navegador embutido com interceptador inteligente
              e extrator de módulos/aulas do Kiwify.
 ===========================================================
 """
-from PySide6.QtCore import QSize, Qt, QUrl, Signal
+from PySide6.QtCore import QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
@@ -67,6 +67,8 @@ class BrowserView(QWidget):
     """Visualizador de Navegador Web Integrado."""
 
     send_to_downloader = Signal(str, str)  # (url, subfolder)
+    favorito_pedido = Signal(str, str)  # (titulo, url)
+    pagina_visitada = Signal(str, str)  # (titulo, url)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -121,6 +123,25 @@ class BrowserView(QWidget):
         """)
         self.url_bar.returnPressed.connect(self.navigate_to_url)
 
+        self.btn_favorito = QPushButton("⭐ Favoritar")
+        self.btn_favorito.setFixedHeight(34)
+        self.btn_favorito.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_favorito.setToolTip("Salvar esta página nos Favoritos")
+        self.btn_favorito.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: #F5C542;
+                border: 1px solid #F5C542;
+                border-radius: 6px;
+                padding: 0 12px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #3A3214;
+            }
+        """)
+        self.btn_favorito.clicked.connect(self.favoritar_pagina)
+
         self.btn_go = QPushButton("Ir")
         self.btn_go.setFixedHeight(34)
         self.btn_go.setStyleSheet(f"""
@@ -174,6 +195,7 @@ class BrowserView(QWidget):
         nav_bar.addWidget(self.btn_forward)
         nav_bar.addWidget(self.btn_reload)
         nav_bar.addWidget(self.url_bar, stretch=1)
+        nav_bar.addWidget(self.btn_favorito)
         nav_bar.addWidget(self.btn_go)
         nav_bar.addWidget(self.btn_baixar)
         nav_bar.addWidget(self.btn_media_count)
@@ -188,6 +210,15 @@ class BrowserView(QWidget):
         self.web_view = QWebEngineView()
         self.web_view.page().setBackgroundColor(QColor(ThemeColors.BACKGROUND))
         self.web_view.urlChanged.connect(self.update_url_bar)
+        self._visita_timer = QTimer(self)
+        self._visita_timer.setSingleShot(True)
+        self._visita_timer.setInterval(900)
+        self._visita_timer.timeout.connect(self._emitir_visita)
+        self._ultima_visita = ""
+        self._ultimo_titulo = ""
+        self.web_view.urlChanged.connect(lambda _q: self._visita_timer.start())
+        self.web_view.titleChanged.connect(lambda _t: self._visita_timer.start())
+        self.web_view.loadFinished.connect(lambda _ok: self._visita_timer.start())
         self.web_view.setHtml(
             f"<html><body style='background:{ThemeColors.BACKGROUND};margin:0'></body></html>"
         )
@@ -240,6 +271,30 @@ class BrowserView(QWidget):
             return
         self.detected_media.append(media_url)
         self.btn_media_count.setText(f"Mídias ({len(self.detected_media)})")
+
+    def _emitir_visita(self) -> None:
+        url = self.web_view.url().toString()
+        baixa = url.lower()
+        if not url.startswith("http"):
+            return
+        if any(trecho in baixa for trecho in ("generate_204", "googlevideo.com", "doubleclick.net", "googleads.")):
+            return
+        titulo = (self.web_view.title() or "").strip() or url
+        if titulo.lower() in {"about:blank"}:
+            return
+        if self._ultima_visita == url and self._ultimo_titulo == titulo:
+            return
+        self._ultima_visita = url
+        self._ultimo_titulo = titulo
+        self.pagina_visitada.emit(titulo, url)
+
+    def favoritar_pagina(self) -> None:
+        url = self.web_view.url().toString()
+        if not url.startswith("http"):
+            QMessageBox.information(self, "Favoritos", "Abra uma página antes de favoritar.")
+            return
+        titulo = (self.web_view.title() or "").strip() or url
+        self.favorito_pedido.emit(titulo, url)
 
     def baixar_pagina_atual(self) -> None:
         url = self.web_view.url().toString()

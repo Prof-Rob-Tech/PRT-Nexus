@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from database.manager import db_manager, plataforma_da_url
 from theme.colors import ThemeColors
 
 YTDLP_AVAILABLE = False
@@ -468,6 +469,8 @@ class DownloadsView(QWidget):
                 progress_bar.setValue(100)
                 item_status.setText("Concluído")
                 item_status.setStyleSheet("color: #4ade80; background: transparent; border: none;")
+                titulo = item_title.text().strip() or url
+                db_manager.add_history(titulo, url, plataforma_da_url(url), "Download")
             else:
                 item_status.setText("Erro")
                 item_status.setStyleSheet("color: #f87171; background: transparent; border: none;")
